@@ -1,0 +1,71 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+slurm-*.out
+*.out
+*.err
+
+# Framework outputs
+outputs/**
+!outputs/.gitkeep
+outputs/stage1/**
+outputs/stage2/**
+outputs/stage3/**
+outputs/stage4/**
+
+# Large data files
+*.h5
+*.hdf5
+*.HDF5
+*.root
+*.npz
+*.npy
+*.pkl
+*.pickle
+
+# Local configs / secrets
+.env
+*.local.yaml
+*.local.yml
+*.local.json
+
+# Temporary files
+tmp/
+temp/
+.cache/
