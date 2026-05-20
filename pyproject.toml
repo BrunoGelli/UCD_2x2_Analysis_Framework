@@ -22,3 +22,9 @@ packages = ["twobytwo_display"]
 
 [project.urls]
 Home = "https://example.invalid"
+
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
