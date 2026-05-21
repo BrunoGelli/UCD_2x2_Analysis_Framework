@@ -27,11 +27,13 @@ from ucd2x2.stage2.pipeline_ui import (
     widgets_for_step,
 )
 from ucd2x2.core.io import FlowFile
+from ucd2x2.core.truth import summarize_truth_event_tree
 import ucd2x2.display.viz as viz
 from ucd2x2.display.viz import (
     make_plotly_2d_projections,
     make_plotly_3d,
     make_plotly_analysis,
+    truth_trajectory_overlay_diagnostic,
 )
 
 pn.extension("plotly")
@@ -92,6 +94,9 @@ show_boxes = pn.widgets.Checkbox(name="Show geometry boxes", value=True)
 
 # truth
 show_truth = pn.widgets.Checkbox(name="Enable truth overlay", value=False)
+show_truth_segments = pn.widgets.Checkbox(name="Show truth segments", value=True)
+show_truth_traj_parents = pn.widgets.Checkbox(name="Show truth trajectory parents", value=False)
+truth_tree_max_entries = pn.widgets.IntInput(name="Truth tree max entries", value=10, start=1, step=1)
 truth_mode = pn.widgets.Select(name="Truth mode", options=["backtrack", "window"], value="backtrack")
 truth_event = pn.widgets.Select(name="Window truth event_id", options=["auto"], value="auto")
 show_vertices = pn.widgets.Checkbox(name="Show truth vertices", value=True)
@@ -122,6 +127,7 @@ view2d = pn.pane.Plotly(sizing_mode="stretch_both")
 analysis_text = pn.pane.Markdown("", sizing_mode="stretch_width")
 analysis_plot = pn.pane.Plotly(min_height=450, sizing_mode="stretch_width")
 view_analysis = pn.Column(analysis_text, analysis_plot, sizing_mode="stretch_both")
+truth_tree_markdown = pn.pane.Markdown("", sizing_mode="stretch_both")
 
 # stage2 config
 stage2_cfg_path = pn.widgets.TextInput(name="Stage2 config path", value="configs/stage2/dbscan_default.yaml")
@@ -310,6 +316,9 @@ def _selected_truth_event_id():
 def _refresh_control_visibility():
     truth_enabled = bool(show_truth.value)
     truth_mode.visible = truth_enabled
+    show_truth_segments.visible = truth_enabled
+    show_truth_traj_parents.visible = truth_enabled
+    truth_tree_max_entries.visible = truth_enabled
     truth_event.visible = truth_enabled and truth_mode.value == "window"
     show_all_window_vertices.visible = truth_enabled and truth_mode.value == "window"
     show_vertices.visible = truth_enabled
@@ -378,9 +387,10 @@ def _refresh_views(*_):
 
     clusters = _compute_clusters(hits, muon_track, ev)
 
-    truth_segments, truth_vertices, truth_info = None, None, None
+    truth_segments, truth_vertices, truth_info, truth_trajectories = None, None, None, None
     if show_truth.value:
-        truth_segments, truth_info = state.flow.get_truth_overlay(
+        if show_truth_segments.value:
+            truth_segments, truth_info = state.flow.get_truth_overlay(
             ev,
             mode=truth_mode.value,
             hit_type=hit_type.value,
@@ -389,6 +399,11 @@ def _refresh_views(*_):
             truth_event_id=_selected_truth_event_id(),
             mc_only_muons=bool(mc_only_muons.value),
         )
+        else:
+            truth_info = {"selection": truth_mode.value, "missing": False, "chosen_n_segments": 0}
+            truth_segments = None
+        truth_trajectories = state.flow.get_truth_trajectories_for_event(ev, truth_event_id=_selected_truth_event_id())
+
         if show_vertices.value:
             truth_vertices = state.flow.get_truth_vertices(
                 ev,
@@ -431,6 +446,8 @@ def _refresh_views(*_):
         mc_max_segments=int(mc_max_segments.value),
         mc_only_muons=bool(mc_only_muons.value),
         mc_label=f"MC segments ({truth_mode.value})",
+        mc_trajectories=truth_trajectories,
+        show_truth_trajectories=bool(show_truth_traj_parents.value),
     )
     fig2d = make_plotly_2d_projections(
         hits,
@@ -445,6 +462,31 @@ def _refresh_views(*_):
     view2d.object = fig2d
     analysis_text.object = _analysis_markdown(hits, clusters, truth_info)
     analysis_plot.object = fig_analysis
+
+    tables_available = state.flow.get_truth_tables_available() if state.flow is not None else {}
+    truth_tree_markdown.object = summarize_truth_event_tree(
+        truth_segments,
+        truth_trajectories,
+        max_entries=int(truth_tree_max_entries.value),
+        tables_available=tables_available,
+    )
+    vertex_rows = truth_vertices
+    if vertex_rows is None:
+        vertex_rows = state.flow.get_truth_mc_hdr_for_event(ev, truth_event_id=_selected_truth_event_id())
+    seg_names = ", ".join((truth_segments.dtype.names or ())) if truth_segments is not None and len(truth_segments) else "n/a"
+    traj_names = ", ".join((truth_trajectories.dtype.names or ())) if truth_trajectories is not None and len(truth_trajectories) else "n/a"
+    vtx_names = ", ".join((vertex_rows.dtype.names or ())) if vertex_rows is not None and len(vertex_rows) else "n/a"
+    tr_ok, tr_reason = truth_trajectory_overlay_diagnostic(truth_trajectories)
+    diag = (
+        "\n\n---\n"
+        "**Diagnostics**  \n"
+        f"tables: {tables_available}  \n"
+        f"segment fields: {seg_names}  \n"
+        f"trajectory fields: {traj_names}  \n"
+        f"vertex/header fields: {vtx_names}  \n"
+        f"trajectory overlay drawable: {tr_ok} ({tr_reason})"
+    )
+    truth_tree_markdown.object += diag
     _set_status(
         f"**File:** `{os.path.basename(state.path)}`  \n"
         f"**Event:** `{ev}`  \n"
@@ -493,6 +535,9 @@ for w in [
     show_boxes,
     show_muon,
     show_truth,
+    show_truth_segments,
+    show_truth_traj_parents,
+    truth_tree_max_entries,
     truth_mode,
     truth_event,
     show_vertices,
@@ -516,6 +561,9 @@ navigation_card = pn.Card(pn.Row(prev_btn, next_btn), muon_only, event_slider, e
 display_card = pn.Card(hit_type, color_mode, max_hits, point_size, show_boxes, title="Display options", collapsed=False)
 truth_card = pn.Card(
     show_truth,
+    show_truth_segments,
+    show_truth_traj_parents,
+    truth_tree_max_entries,
     truth_mode,
     truth_event,
     show_vertices,
@@ -542,6 +590,6 @@ sidebar = pn.Column(
     sizing_mode="stretch_height",
 )
 
-main_tabs = pn.Tabs(("3D", view3d), ("2D", view2d), ("Analysis", view_analysis), dynamic=True)
+main_tabs = pn.Tabs(("3D", view3d), ("2D", view2d), ("Analysis", view_analysis), ("Truth Tree", truth_tree_markdown), dynamic=True)
 layout = pn.Row(sidebar, main_tabs, sizing_mode="stretch_both")
 layout.servable(title="2x2 Event Display")

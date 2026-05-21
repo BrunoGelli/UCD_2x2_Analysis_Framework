@@ -114,6 +114,8 @@ def make_plotly_3d(
     mc_max_segments=3000,
     mc_only_muons=False,
     mc_label="MC truth segments",
+    mc_trajectories=None,
+    show_truth_trajectories=False,
 ):
     if len(hits) == 0:
         fig = go.Figure()
@@ -196,6 +198,12 @@ def make_plotly_3d(
             )
         )
 
+
+    if show_truth_trajectories:
+        tr_trace = _trajectory_trace(mc_trajectories)
+        if tr_trace is not None:
+            fig.add_trace(tr_trace)
+
     if mc_vertices is not None and len(mc_vertices) > 0 and "vertex" in (mc_vertices.dtype.names or ()):
         vx = mc_vertices["vertex"][:, 0].astype(float)
         vy = mc_vertices["vertex"][:, 1].astype(float)
@@ -211,6 +219,51 @@ def make_plotly_3d(
     fig.update_layout(scene=dict(xaxis_title="z [cm]", yaxis_title="x [cm]", zaxis_title="y [cm]", aspectmode="data"), margin=dict(l=0, r=0, t=35, b=0), title="3D view (interactive)")
     return fig
 
+
+
+
+def truth_trajectory_overlay_diagnostic(trajectories):
+    if trajectories is None:
+        return False, "no trajectories table"
+    if len(trajectories) == 0:
+        return False, "trajectories table is empty"
+    names = trajectories.dtype.names or ()
+    scalar_ok = all(k in names for k in ["x_start", "y_start", "z_start", "x_end", "y_end", "z_end"])
+    vector_ok = all(k in names for k in ["xyz_start", "xyz_end"])
+    if scalar_ok:
+        return True, "using scalar start/end fields"
+    if vector_ok:
+        return True, "using vector xyz_start/xyz_end fields"
+    return False, "missing trajectory coordinates (need scalar x/y/z start/end or xyz_start/xyz_end)"
+
+
+def _trajectory_trace(trajectories):
+    ok, _ = truth_trajectory_overlay_diagnostic(trajectories)
+    if not ok:
+        return None
+
+    names = trajectories.dtype.names or ()
+    if all(k in names for k in ["x_start", "y_start", "z_start", "x_end", "y_end", "z_end"]):
+        xs = trajectories["x_start"].astype(float)
+        ys = trajectories["y_start"].astype(float)
+        zs = trajectories["z_start"].astype(float)
+        xe = trajectories["x_end"].astype(float)
+        ye = trajectories["y_end"].astype(float)
+        ze = trajectories["z_end"].astype(float)
+    else:
+        xyzs = np.asarray(trajectories["xyz_start"], dtype=float)
+        xyze = np.asarray(trajectories["xyz_end"], dtype=float)
+        if xyzs.ndim != 2 or xyze.ndim != 2 or xyzs.shape[1] < 3 or xyze.shape[1] < 3:
+            return None
+        xs, ys, zs = xyzs[:, 0], xyzs[:, 1], xyzs[:, 2]
+        xe, ye, ze = xyze[:, 0], xyze[:, 1], xyze[:, 2]
+
+    xline, yline, zline = [], [], []
+    for i in range(len(trajectories)):
+        xline += [float(zs[i]), float(ze[i]), None]
+        yline += [float(xs[i]), float(xe[i]), None]
+        zline += [float(ys[i]), float(ye[i]), None]
+    return go.Scatter3d(x=xline, y=yline, z=zline, mode="lines", line=dict(width=2, color="magenta"), name="Truth trajectories", opacity=0.55)
 
 def make_plotly_analysis(hits, clusters=None):
     """Small analysis figure with charge distribution and drift distribution."""
