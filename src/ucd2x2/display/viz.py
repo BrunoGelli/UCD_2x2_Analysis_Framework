@@ -222,17 +222,47 @@ def make_plotly_3d(
 
 
 
-def _trajectory_trace(trajectories):
-    if trajectories is None or len(trajectories) == 0:
-        return None
+def truth_trajectory_overlay_diagnostic(trajectories):
+    if trajectories is None:
+        return False, "no trajectories table"
+    if len(trajectories) == 0:
+        return False, "trajectories table is empty"
     names = trajectories.dtype.names or ()
-    if not all(k in names for k in ["x_start", "y_start", "z_start", "x_end", "y_end", "z_end"]):
+    scalar_ok = all(k in names for k in ["x_start", "y_start", "z_start", "x_end", "y_end", "z_end"])
+    vector_ok = all(k in names for k in ["xyz_start", "xyz_end"])
+    if scalar_ok:
+        return True, "using scalar start/end fields"
+    if vector_ok:
+        return True, "using vector xyz_start/xyz_end fields"
+    return False, "missing trajectory coordinates (need scalar x/y/z start/end or xyz_start/xyz_end)"
+
+
+def _trajectory_trace(trajectories):
+    ok, _ = truth_trajectory_overlay_diagnostic(trajectories)
+    if not ok:
         return None
+
+    names = trajectories.dtype.names or ()
+    if all(k in names for k in ["x_start", "y_start", "z_start", "x_end", "y_end", "z_end"]):
+        xs = trajectories["x_start"].astype(float)
+        ys = trajectories["y_start"].astype(float)
+        zs = trajectories["z_start"].astype(float)
+        xe = trajectories["x_end"].astype(float)
+        ye = trajectories["y_end"].astype(float)
+        ze = trajectories["z_end"].astype(float)
+    else:
+        xyzs = np.asarray(trajectories["xyz_start"], dtype=float)
+        xyze = np.asarray(trajectories["xyz_end"], dtype=float)
+        if xyzs.ndim != 2 or xyze.ndim != 2 or xyzs.shape[1] < 3 or xyze.shape[1] < 3:
+            return None
+        xs, ys, zs = xyzs[:, 0], xyzs[:, 1], xyzs[:, 2]
+        xe, ye, ze = xyze[:, 0], xyze[:, 1], xyze[:, 2]
+
     xline, yline, zline = [], [], []
-    for tr in trajectories:
-        xline += [float(tr["z_start"]), float(tr["z_end"]), None]
-        yline += [float(tr["x_start"]), float(tr["x_end"]), None]
-        zline += [float(tr["y_start"]), float(tr["y_end"]), None]
+    for i in range(len(trajectories)):
+        xline += [float(zs[i]), float(ze[i]), None]
+        yline += [float(xs[i]), float(xe[i]), None]
+        zline += [float(ys[i]), float(ye[i]), None]
     return go.Scatter3d(x=xline, y=yline, z=zline, mode="lines", line=dict(width=2, color="magenta"), name="Truth trajectories", opacity=0.55)
 
 def make_plotly_analysis(hits, clusters=None):

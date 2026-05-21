@@ -120,11 +120,10 @@ class FlowFile:
     ):
         """Return truth interactions/vertices aligned to selected truth content."""
         inter = self.mc_interactions
-        if inter is None:
-            return None
+        mc_hdr = self._find_truth_dataset(["mc_truth/mc_hdr/data", "mc_truth/genie_hdr/data"])
 
         mode = str(mode).lower()
-        if mode == "window":
+        if mode == "window" and inter is not None:
             _, chosen_interactions, info = self._truth_overlay_window(
                 event_index,
                 select="dominant",
@@ -137,22 +136,55 @@ class FlowFile:
                 return inter[i0:i1]
             return chosen_interactions
 
-        segments, info = self._truth_overlay_backtrack(
-            event_index,
-            hit_type=hit_type,
-            top_k_segments=top_k_segments,
-            min_weight=min_weight,
-            mc_only_muons=False,
-        )
-        if info.get("missing", True) or segments is None or len(segments) == 0:
-            return inter[:0]
+        if mode == "backtrack" and inter is not None:
+            segments, info = self._truth_overlay_backtrack(
+                event_index,
+                hit_type=hit_type,
+                top_k_segments=top_k_segments,
+                min_weight=min_weight,
+                mc_only_muons=False,
+            )
+            if info.get("missing", True) or segments is None or len(segments) == 0:
+                return inter[:0]
 
-        inter_ids = self._interaction_ids_from_segments(segments)
-        if inter_ids.size == 0 or "interaction_id" not in (inter.dtype.names or ()):
-            return inter[:0]
+            inter_ids = self._interaction_ids_from_segments(segments)
+            if inter_ids.size == 0 or "interaction_id" not in (inter.dtype.names or ()):
+                return inter[:0]
+            mask = np.isin(inter["interaction_id"].astype(np.int64), inter_ids)
+            return inter[mask]
 
-        mask = np.isin(inter["interaction_id"].astype(np.int64), inter_ids)
-        return inter[mask]
+        if mc_hdr is None:
+            return None
+
+        hdr_names = mc_hdr.dtype.names or ()
+        if mode == "window":
+            if "event_id" not in hdr_names:
+                return mc_hdr[:]
+            target_ids = None
+            if truth_event_id is not None:
+                target_ids = np.array([int(truth_event_id)], dtype=np.int64)
+            else:
+                segs = self.get_truth_segments_for_event(event_index, hit_type=hit_type)
+                if segs is not None and len(segs) and "event_id" in (segs.dtype.names or ()):
+                    target_ids = np.unique(segs["event_id"].astype(np.int64))
+            if target_ids is None:
+                return mc_hdr[:0]
+            return mc_hdr[np.isin(mc_hdr["event_id"].astype(np.int64), target_ids)]
+
+        # backtrack fallback to mc_hdr
+        segs = self.get_truth_segments_for_event(event_index, hit_type=hit_type)
+        if segs is None or len(segs) == 0:
+            return mc_hdr[:0]
+        seg_names = segs.dtype.names or ()
+        if "event_id" not in seg_names or "event_id" not in hdr_names:
+            return mc_hdr[:0]
+
+        ev_ids = np.unique(segs["event_id"].astype(np.int64))
+        mask = np.isin(mc_hdr["event_id"].astype(np.int64), ev_ids)
+        if "vertex_id" in seg_names and "vertex_id" in hdr_names:
+            vtx_ids = np.unique(segs["vertex_id"].astype(np.int64))
+            mask &= np.isin(mc_hdr["vertex_id"].astype(np.int64), vtx_ids)
+        return mc_hdr[mask]
 
 
     def get_truth_tables_available(self) -> Dict[str, Optional[str]]:

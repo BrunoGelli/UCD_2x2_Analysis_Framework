@@ -33,6 +33,7 @@ from ucd2x2.display.viz import (
     make_plotly_2d_projections,
     make_plotly_3d,
     make_plotly_analysis,
+    truth_trajectory_overlay_diagnostic,
 )
 
 pn.extension("plotly")
@@ -469,6 +470,23 @@ def _refresh_views(*_):
         max_entries=int(truth_tree_max_entries.value),
         tables_available=tables_available,
     )
+    vertex_rows = truth_vertices
+    if vertex_rows is None:
+        vertex_rows = state.flow.get_truth_mc_hdr_for_event(ev, truth_event_id=_selected_truth_event_id())
+    seg_names = ", ".join((truth_segments.dtype.names or ())) if truth_segments is not None and len(truth_segments) else "n/a"
+    traj_names = ", ".join((truth_trajectories.dtype.names or ())) if truth_trajectories is not None and len(truth_trajectories) else "n/a"
+    vtx_names = ", ".join((vertex_rows.dtype.names or ())) if vertex_rows is not None and len(vertex_rows) else "n/a"
+    tr_ok, tr_reason = truth_trajectory_overlay_diagnostic(truth_trajectories)
+    diag = (
+        "\n\n---\n"
+        "**Diagnostics**  \n"
+        f"tables: {tables_available}  \n"
+        f"segment fields: {seg_names}  \n"
+        f"trajectory fields: {traj_names}  \n"
+        f"vertex/header fields: {vtx_names}  \n"
+        f"trajectory overlay drawable: {tr_ok} ({tr_reason})"
+    )
+    truth_tree_markdown.object += diag
     _set_status(
         f"**File:** `{os.path.basename(state.path)}`  \n"
         f"**Event:** `{ev}`  \n"
@@ -521,9 +539,6 @@ for w in [
     show_truth_traj_parents,
     truth_tree_max_entries,
     truth_mode,
-    show_truth_segments,
-    show_truth_traj_parents,
-    truth_tree_max_entries,
     truth_event,
     show_vertices,
     show_all_window_vertices,
@@ -550,9 +565,6 @@ truth_card = pn.Card(
     show_truth_traj_parents,
     truth_tree_max_entries,
     truth_mode,
-    show_truth_segments,
-    show_truth_traj_parents,
-    truth_tree_max_entries,
     truth_event,
     show_vertices,
     show_all_window_vertices,
