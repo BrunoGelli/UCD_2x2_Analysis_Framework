@@ -114,6 +114,8 @@ def make_plotly_3d(
     mc_max_segments=3000,
     mc_only_muons=False,
     mc_label="MC truth segments",
+    mc_trajectories=None,
+    show_truth_trajectories=False,
 ):
     if len(hits) == 0:
         fig = go.Figure()
@@ -196,6 +198,12 @@ def make_plotly_3d(
             )
         )
 
+
+    if show_truth_trajectories:
+        tr_trace = _trajectory_trace(mc_trajectories)
+        if tr_trace is not None:
+            fig.add_trace(tr_trace)
+
     if mc_vertices is not None and len(mc_vertices) > 0 and "vertex" in (mc_vertices.dtype.names or ()):
         vx = mc_vertices["vertex"][:, 0].astype(float)
         vy = mc_vertices["vertex"][:, 1].astype(float)
@@ -211,6 +219,21 @@ def make_plotly_3d(
     fig.update_layout(scene=dict(xaxis_title="z [cm]", yaxis_title="x [cm]", zaxis_title="y [cm]", aspectmode="data"), margin=dict(l=0, r=0, t=35, b=0), title="3D view (interactive)")
     return fig
 
+
+
+
+def _trajectory_trace(trajectories):
+    if trajectories is None or len(trajectories) == 0:
+        return None
+    names = trajectories.dtype.names or ()
+    if not all(k in names for k in ["x_start", "y_start", "z_start", "x_end", "y_end", "z_end"]):
+        return None
+    xline, yline, zline = [], [], []
+    for tr in trajectories:
+        xline += [float(tr["z_start"]), float(tr["z_end"]), None]
+        yline += [float(tr["x_start"]), float(tr["x_end"]), None]
+        zline += [float(tr["y_start"]), float(tr["y_end"]), None]
+    return go.Scatter3d(x=xline, y=yline, z=zline, mode="lines", line=dict(width=2, color="magenta"), name="Truth trajectories", opacity=0.55)
 
 def make_plotly_analysis(hits, clusters=None):
     """Small analysis figure with charge distribution and drift distribution."""

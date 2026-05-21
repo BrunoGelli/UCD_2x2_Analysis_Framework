@@ -154,6 +154,80 @@ class FlowFile:
         mask = np.isin(inter["interaction_id"].astype(np.int64), inter_ids)
         return inter[mask]
 
+
+    def get_truth_tables_available(self) -> Dict[str, Optional[str]]:
+        aliases = {
+            "segments": ["mc_truth/segments/data", "mc_truth/tracks/data"],
+            "trajectories": ["mc_truth/trajectories/data", "mc_truth/traj/data"],
+            "mc_hdr": ["mc_truth/mc_hdr/data", "mc_truth/genie_hdr/data"],
+            "mc_stack": ["mc_truth/mc_stack/data", "mc_truth/genie_stack/data"],
+        }
+        out = {}
+        for key, paths in aliases.items():
+            found = None
+            for path in paths:
+                if self.h5.get(path, None) is not None:
+                    found = path
+                    break
+            out[key] = found
+        return out
+
+    def _find_truth_dataset(self, paths):
+        for path in paths:
+            ds = self.h5.get(path, None)
+            if ds is not None:
+                return ds
+        return None
+
+    def get_truth_segments_for_event(self, event_index: int, hit_type: str = "prompt"):
+        segs, _ = self.get_truth_overlay(event_index, mode="backtrack", hit_type=hit_type)
+        return segs
+
+    def get_truth_trajectories_for_event(self, event_index: int, truth_event_id: Optional[int] = None):
+        traj = self._find_truth_dataset(["mc_truth/trajectories/data", "mc_truth/traj/data"])
+        if traj is None:
+            return None
+        names = traj.dtype.names or ()
+        if "event_id" not in names:
+            return traj[:]
+        if truth_event_id is None:
+            segs = self.get_truth_segments_for_event(event_index)
+            if segs is not None and len(segs) and "event_id" in (segs.dtype.names or ()):
+                ids = np.unique(segs["event_id"].astype(np.int64))
+                return traj[np.isin(traj["event_id"].astype(np.int64), ids)]
+            return traj[:0]
+        return traj[traj["event_id"].astype(np.int64) == int(truth_event_id)]
+
+    def get_truth_mc_hdr_for_event(self, event_index: int, truth_event_id: Optional[int] = None):
+        hdr = self._find_truth_dataset(["mc_truth/mc_hdr/data", "mc_truth/genie_hdr/data"])
+        if hdr is None:
+            return None
+        names = hdr.dtype.names or ()
+        if "event_id" not in names:
+            return hdr[:]
+        if truth_event_id is None:
+            segs = self.get_truth_segments_for_event(event_index)
+            if segs is not None and len(segs) and "event_id" in (segs.dtype.names or ()):
+                ids = np.unique(segs["event_id"].astype(np.int64))
+                return hdr[np.isin(hdr["event_id"].astype(np.int64), ids)]
+            return hdr[:0]
+        return hdr[hdr["event_id"].astype(np.int64) == int(truth_event_id)]
+
+    def get_truth_mc_stack_for_event(self, event_index: int, truth_event_id: Optional[int] = None):
+        stk = self._find_truth_dataset(["mc_truth/mc_stack/data", "mc_truth/genie_stack/data"])
+        if stk is None:
+            return None
+        names = stk.dtype.names or ()
+        if "event_id" not in names:
+            return stk[:]
+        if truth_event_id is None:
+            segs = self.get_truth_segments_for_event(event_index)
+            if segs is not None and len(segs) and "event_id" in (segs.dtype.names or ()):
+                ids = np.unique(segs["event_id"].astype(np.int64))
+                return stk[np.isin(stk["event_id"].astype(np.int64), ids)]
+            return stk[:0]
+        return stk[stk["event_id"].astype(np.int64) == int(truth_event_id)]
+
     # ---------- compatibility wrappers ----------
     def get_mc_overlay_for_charge_event(self, event_index: int, *, select: str = "dominant", truth_event_id: Optional[int] = None):
         segs, interactions, info = self._truth_overlay_window(event_index, select=select, truth_event_id=truth_event_id)
