@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from twobytwo_display.stage2.config import default_registry, load_pipeline_config, pipeline_from_dict
-from twobytwo_display.stage2.cuts import DBSCANClusterProducer, RepeatedPixelFilter
-from twobytwo_display.stage2.pipeline import Stage2Pipeline
+from ucd2x2.stage2.config import default_registry, load_pipeline_config, pipeline_from_dict
+from ucd2x2.stage2.cuts import DBSCANClusterProducer, RepeatedPixelFilter
+from ucd2x2.stage2.pipeline import Stage2Pipeline
 
 
 def _hits_for_repeated_pixels():

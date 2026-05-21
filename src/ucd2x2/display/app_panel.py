@@ -1,7 +1,7 @@
 """Panel event display UI.
 
 Run:
-  panel serve -m twobytwo_display.app_panel --show --args --h5 /path/to/file.FLOW.hdf5
+  panel serve -m ucd2x2.display.app_panel --show --args --h5 /path/to/file.FLOW.hdf5
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ import numpy as np
 import panel as pn
 import plotly.graph_objects as go
 
-from twobytwo_display.clustering import angle_to_z_of_centroid_line
-from twobytwo_display.stage2.config import dump_pipeline_config, load_pipeline_config, default_registry, pipeline_from_dict
-from twobytwo_display.stage2.pipeline_ui import (
+from ucd2x2.core.clustering import angle_to_z_of_centroid_line
+from ucd2x2.stage2.config import dump_pipeline_config, load_pipeline_config, default_registry, pipeline_from_dict
+from ucd2x2.stage2.pipeline_ui import (
     UIStepState,
     add_step,
     config_to_ui_steps,
@@ -26,9 +26,9 @@ from twobytwo_display.stage2.pipeline_ui import (
     ui_steps_to_config,
     widgets_for_step,
 )
-from twobytwo_display.io import FlowFile
-import twobytwo_display.viz as viz
-from twobytwo_display.viz import (
+from ucd2x2.core.io import FlowFile
+import ucd2x2.display.viz as viz
+from ucd2x2.display.viz import (
     make_plotly_2d_projections,
     make_plotly_3d,
     make_plotly_analysis,

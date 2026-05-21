@@ -4,8 +4,8 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .geometry import module_boxes_cm
-from .selection import muon_region_labels
+from ucd2x2.core.geometry import module_boxes_cm
+from ucd2x2.core.selection import muon_region_labels
 
 
 def _safe_log10(x, eps=1e-12):

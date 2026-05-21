@@ -1,16 +1,16 @@
 import importlib
 from pathlib import Path
 
-from twobytwo_display.io import FlowFile
+from ucd2x2.core.io import FlowFile
 
 
 def test_main_modules_importable():
     modules = [
-        "twobytwo_display.app_panel",
-        "twobytwo_display.io",
-        "twobytwo_display.viz",
-        "twobytwo_display.clustering",
-        "twobytwo_display.geometry",
+        "ucd2x2.display.app_panel",
+        "ucd2x2.core.io",
+        "ucd2x2.display.viz",
+        "ucd2x2.core.clustering",
+        "ucd2x2.core.geometry",
     ]
     for module_name in modules:
         importlib.import_module(module_name)

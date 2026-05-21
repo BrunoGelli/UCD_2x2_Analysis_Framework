@@ -1,5 +1,5 @@
-from twobytwo_display.stage2.config import default_registry, load_pipeline_config
-from twobytwo_display.stage2.pipeline_ui import add_step, config_to_ui_steps, move_step, remove_step, ui_steps_to_config, widgets_for_step
+from ucd2x2.stage2.config import default_registry, load_pipeline_config
+from ucd2x2.stage2.pipeline_ui import add_step, config_to_ui_steps, move_step, remove_step, ui_steps_to_config, widgets_for_step
 
 
 def test_pipeline_ui_round_trip_preserves_order_enabled_params():

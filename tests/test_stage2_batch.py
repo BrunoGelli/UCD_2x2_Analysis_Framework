@@ -2,7 +2,7 @@ import json
 import subprocess
 import sys
 
-from twobytwo_display.stage2.run_stage2 import run_stage2_file
+from ucd2x2.stage2.run_stage2 import run_stage2_file
 
 
 def test_run_stage2_file_summary_on_fixture():
@@ -34,7 +34,7 @@ def test_run_stage2_module_does_not_emit_runpy_warning(tmp_path):
     cmd = [
         sys.executable,
         "-m",
-        "twobytwo_display.stage2.run_stage2",
+        "ucd2x2.stage2.run_stage2",
         "--input",
         "tests/sample_data.hdf5",
         "--config",

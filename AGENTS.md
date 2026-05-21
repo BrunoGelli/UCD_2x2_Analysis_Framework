@@ -4,7 +4,7 @@ This repository is being developed into the UCD 2x2 Analysis Framework.
 
 ## Current state
 
-- The current working event display lives in `twobytwo_display/app_panel.py`.
+- The current working event display lives in `ucd2x2/app_panel.py`.
 - The event display opens ndlar_flow-like HDF5 files and displays event hits.
 - A small committed HDF5 fixture is available at `tests/sample_data.hdf5`.
 - The framework is being refactored gradually. Preserve existing behavior unless the task explicitly asks otherwise.
@@ -32,7 +32,7 @@ pytest -q
 Run the event display manually:
 
 ```bash
-panel serve -m twobytwo_display.app_panel --show --args --h5 tests/sample_data.hdf5
+panel serve src/ucd2x2/display/app_panel.py --show --args --h5 tests/sample_data.hdf5
 ```
 
 ## Design rules
@@ -57,11 +57,11 @@ pytest -q
 At minimum, verify imports still work:
 
 ```bash
-python -c "import twobytwo_display.app_panel"
+python -c "import ucd2x2.display.app_panel"
 ```
 
 For display changes, preserve this command:
 
 ```bash
-panel serve -m twobytwo_display.app_panel --show --args --h5 tests/sample_data.hdf5
+panel serve src/ucd2x2/display/app_panel.py --show --args --h5 tests/sample_data.hdf5
 ```
