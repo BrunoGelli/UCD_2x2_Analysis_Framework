@@ -1,0 +1,14 @@
+{
+  "clusters_per_event_max": 338,
+  "clusters_per_event_mean": 13.44,
+  "clusters_per_event_min": 0,
+  "config_path": "configs/stage2/dbscan_default.yaml",
+  "input_h5": "tests/sample_data.hdf5",
+  "n_events_failed": 0,
+  "n_events_processed": 100,
+  "n_events_total": 100,
+  "n_events_with_clusters": 92,
+  "total_clusters": 1344,
+  "total_repeated_pixel_hits": 0,
+  "total_repeated_pixels": 0
+}
