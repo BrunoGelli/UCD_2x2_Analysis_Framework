@@ -16,13 +16,16 @@ import panel as pn
 import plotly.graph_objects as go
 
 from twobytwo_display.clustering import angle_to_z_of_centroid_line
-from twobytwo_display.stage2.cuts import DBSCANClusterProducer, RepeatedPixelFilter
-from twobytwo_display.stage2.config import dump_pipeline_config, load_pipeline_config
-from twobytwo_display.stage2.ui_config import (
-    apply_stage2_config_to_dbscan_values,
-    build_stage2_config_from_dbscan_values,
+from twobytwo_display.stage2.config import dump_pipeline_config, load_pipeline_config, default_registry, pipeline_from_dict
+from twobytwo_display.stage2.pipeline_ui import (
+    UIStepState,
+    add_step,
+    config_to_ui_steps,
+    move_step,
+    remove_step,
+    ui_steps_to_config,
+    widgets_for_step,
 )
-from twobytwo_display.stage2.widgets import widgets_from_param_specs
 from twobytwo_display.io import FlowFile
 import twobytwo_display.viz as viz
 from twobytwo_display.viz import (
@@ -101,20 +104,18 @@ mc_minw = pn.widgets.FloatInput(name="Backtrack min weight", value=0.0, step=0.0
 # muon
 show_muon = pn.widgets.Checkbox(name="Show rock muon track", value=False)
 
-# clustering
-show_clusters = pn.widgets.Checkbox(name="Enable DBSCAN clusters", value=False)
-show_repeated_pixel_filter = pn.widgets.Checkbox(name="Enable repeated pixel filter", value=False)
-_repeated_widgets = widgets_from_param_specs(RepeatedPixelFilter.param_specs)
-repeated_max_hits = _repeated_widgets["max_hits_per_pixel"]
-repeated_pixel_fields = _repeated_widgets["pixel_fields"]
-repeated_round_decimals = _repeated_widgets["round_decimals"]
-
-_dbscan_widgets = widgets_from_param_specs(DBSCANClusterProducer.param_specs)
-db_eps = _dbscan_widgets["eps_cm"]
-db_min = _dbscan_widgets["min_samples"]
-cluster_min_hits = _dbscan_widgets["cluster_min_hits"]
-cluster_max_extent = _dbscan_widgets["cluster_max_extent_cm"]
+# stage2 pipeline editor
+stage2_cfg_path = pn.widgets.TextInput(name="Stage2 config path", value="configs/stage2/repeated_pixel_then_dbscan.yaml")
+stage2_load_btn = pn.widgets.Button(name="Load Stage 2 config")
+stage2_save_btn = pn.widgets.Button(name="Save Stage 2 config")
+stage2_step_select = pn.widgets.Select(name="Add step", options=default_registry().names(), value=default_registry().names()[0])
+stage2_add_step_btn = pn.widgets.Button(name="Add step")
+stage2_cfg_status = pn.pane.Markdown("", height=80)
+stage2_steps_column = pn.Column()
 clusters_info = pn.pane.Markdown("", height=180)
+
+_stage2_steps_state = config_to_ui_steps(load_pipeline_config(stage2_cfg_path.value), registry=default_registry())
+_stage2_step_widgets = []
 
 view3d = pn.pane.Plotly(sizing_mode="stretch_both")
 view2d = pn.pane.Plotly(sizing_mode="stretch_both")
@@ -176,6 +177,87 @@ def _load_stage2_config(_=None):
     except Exception as exc:
         _set_stage2_cfg_status(f"Failed to load config: {exc}", ok=False)
 
+def _stage2_config_from_ui():
+    steps = []
+    for row in _stage2_step_widgets:
+        params = {k: w.value for k, w in row["params_widgets"].items()}
+        steps.append(UIStepState(name=row["name"], enabled=bool(row["enabled"].value), params=params))
+    return ui_steps_to_config(steps)
+
+
+def _rebuild_stage2_step_cards():
+    global _stage2_step_widgets
+    _stage2_step_widgets = []
+    stage2_steps_column.objects = []
+    for idx, step in enumerate(_stage2_steps_state):
+        params_widgets = widgets_for_step(step.name, values=step.params, registry=default_registry())
+        enabled = pn.widgets.Checkbox(name="Enabled", value=bool(step.enabled))
+        up_btn = pn.widgets.Button(name="↑", width=35)
+        dn_btn = pn.widgets.Button(name="↓", width=35)
+        rm_btn = pn.widgets.Button(name="Remove", button_type="danger", width=80)
+
+        def _make_move(i, d):
+            def _cb(_=None):
+                global _stage2_steps_state
+                _stage2_steps_state = move_step(_stage2_steps_state, i, d)
+                _rebuild_stage2_step_cards()
+                _refresh_views()
+            return _cb
+
+        def _make_remove(i):
+            def _cb(_=None):
+                global _stage2_steps_state
+                _stage2_steps_state = remove_step(_stage2_steps_state, i)
+                _rebuild_stage2_step_cards()
+                _refresh_views()
+            return _cb
+
+        up_btn.on_click(_make_move(idx, -1)); dn_btn.on_click(_make_move(idx, 1)); rm_btn.on_click(_make_remove(idx))
+        for w in params_widgets.values():
+            w.param.watch(_refresh_views, "value")
+        enabled.param.watch(_refresh_views, "value")
+
+        card = pn.Card(enabled, *params_widgets.values(), pn.Row(up_btn, dn_btn, rm_btn), title=step.name, collapsed=True)
+        stage2_steps_column.append(card)
+        _stage2_step_widgets.append({"name": step.name, "enabled": enabled, "params_widgets": params_widgets})
+
+
+def _add_stage2_step(_=None):
+    global _stage2_steps_state
+    _stage2_steps_state = add_step(_stage2_steps_state, str(stage2_step_select.value), registry=default_registry())
+    _rebuild_stage2_step_cards()
+    _refresh_views()
+
+
+def _save_stage2_config(_=None):
+    try:
+        config = _stage2_config_from_ui()
+        yaml_text = dump_pipeline_config(config)
+        path = Path(stage2_cfg_path.value.strip())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml_text)
+        _set_stage2_cfg_status(f"Saved Stage 2 config to `{path}`", ok=True)
+    except Exception as exc:
+        _set_stage2_cfg_status(f"Failed to save config: {exc}", ok=False)
+
+
+def _load_stage2_config(_=None):
+    global _stage2_steps_state
+    try:
+        path = Path(stage2_cfg_path.value.strip())
+        cfg = load_pipeline_config(path)
+        _stage2_steps_state = config_to_ui_steps(cfg, registry=default_registry())
+        _rebuild_stage2_step_cards()
+        _refresh_views()
+        _set_stage2_cfg_status(f"Loaded Stage 2 config from `{path}`", ok=True)
+    except Exception as exc:
+        _set_stage2_cfg_status(f"Failed to load config: {exc}", ok=False)
+
+def _set_stage2_cfg_status(message: str, ok: bool = True):
+    icon = "✅" if ok else "❌"
+    stage2_cfg_status.object = f"{icon} {message}"
+
+
 def _set_status(message: str, ok: bool = True):
     icon = "✅" if ok else "❌"
     status.object = f"### Status {icon}\n{message}"
@@ -236,38 +318,15 @@ def _refresh_control_visibility():
     mc_topk.visible = truth_enabled and truth_mode.value == "backtrack"
     mc_minw.visible = truth_enabled and truth_mode.value == "backtrack"
 
-    repeated_max_hits.visible = bool(show_repeated_pixel_filter.value)
-    repeated_pixel_fields.visible = bool(show_repeated_pixel_filter.value)
-    repeated_round_decimals.visible = bool(show_repeated_pixel_filter.value)
-
-    db_eps.visible = bool(show_clusters.value)
-    db_min.visible = bool(show_clusters.value)
-    cluster_min_hits.visible = bool(show_clusters.value)
-    cluster_max_extent.visible = bool(show_clusters.value)
-    clusters_info.visible = bool(show_clusters.value)
+    clusters_info.visible = True
 
 
-def _compute_clusters(hits, muon_track):
-    if not show_clusters.value:
-        clusters_info.object = ""
-        return None
-    context = {"hits": hits, "muon_track": muon_track}
-    if show_repeated_pixel_filter.value:
-        filter_step = RepeatedPixelFilter(
-            max_hits_per_pixel=int(repeated_max_hits.value),
-            pixel_fields=str(repeated_pixel_fields.value),
-            round_decimals=int(repeated_round_decimals.value),
-        )
-        context.update(filter_step.run(context).data)
-
-    producer = DBSCANClusterProducer(
-        eps_cm=float(db_eps.value),
-        min_samples=int(db_min.value),
-        cluster_min_hits=int(cluster_min_hits.value),
-        cluster_max_extent_cm=float(cluster_max_extent.value),
-    )
-    context.update(producer.run(context).data)
-    clusters = context.get("clusters", [])
+def _compute_clusters(hits, muon_track, event_index):
+    config = _stage2_config_from_ui()
+    pipeline = pipeline_from_dict(config, registry=default_registry())
+    context = {"hits": hits, "muon_track": muon_track, "event_index": int(event_index)}
+    out = pipeline.run(context)
+    clusters = out.get("clusters", [])
     if not clusters:
         clusters_info.object = "**Clusters kept:** 0"
         return []
@@ -317,7 +376,7 @@ def _refresh_views(*_):
     hits = state.flow.get_event_hits(ev, hit_type=hit_type.value)
     muon_track = state.flow.get_muon_track_for_event(ev) if show_muon.value else None
 
-    clusters = _compute_clusters(hits, muon_track)
+    clusters = _compute_clusters(hits, muon_track, ev)
 
     truth_segments, truth_vertices, truth_info = None, None, None
     if show_truth.value:
@@ -420,6 +479,7 @@ next_btn.on_click(_next_event)
 prev_btn.on_click(_prev_event)
 stage2_load_btn.on_click(_load_stage2_config)
 stage2_save_btn.on_click(_save_stage2_config)
+stage2_add_step_btn.on_click(_add_stage2_step)
 
 event_slider.param.watch(lambda e: _goto_event(e.new), "value")
 event_input.param.watch(lambda e: _goto_event(e.new), "value")
@@ -441,19 +501,11 @@ for w in [
     mc_max_segments,
     mc_topk,
     mc_minw,
-    show_repeated_pixel_filter,
-    repeated_max_hits,
-    repeated_pixel_fields,
-    repeated_round_decimals,
-    show_clusters,
-    db_eps,
-    db_min,
-    cluster_min_hits,
-    cluster_max_extent,
 ]:
     w.param.watch(_refresh_views, "value")
 
 _sync_slider_bounds()
+_rebuild_stage2_step_cards()
 _refresh_control_visibility()
 if state.flow is not None:
     _refresh_views()
@@ -475,9 +527,7 @@ truth_card = pn.Card(
     title="Truth overlay",
     collapsed=False,
 )
-repeated_filter_card = pn.Card(show_repeated_pixel_filter, repeated_max_hits, repeated_pixel_fields, repeated_round_decimals, title="Repeated pixel filter", collapsed=True)
-cluster_card = pn.Card(show_clusters, db_eps, db_min, cluster_min_hits, cluster_max_extent, clusters_info, title="Clustering", collapsed=True)
-stage2_cfg_card = pn.Card(stage2_cfg_path, pn.Row(stage2_load_btn, stage2_save_btn), stage2_cfg_status, title="Stage 2 config", collapsed=True)
+stage2_cfg_card = pn.Card(stage2_cfg_path, pn.Row(stage2_load_btn, stage2_save_btn), pn.Row(stage2_step_select, stage2_add_step_btn), stage2_steps_column, clusters_info, stage2_cfg_status, title="Stage 2 pipeline", collapsed=False)
 muon_card = pn.Card(show_muon, title="Muon track", collapsed=True)
 
 sidebar = pn.Column(
@@ -486,8 +536,6 @@ sidebar = pn.Column(
     navigation_card,
     display_card,
     truth_card,
-    repeated_filter_card,
-    cluster_card,
     stage2_cfg_card,
     muon_card,
     width=420,
