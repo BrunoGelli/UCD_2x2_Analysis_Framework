@@ -4,6 +4,7 @@ from typing import Any, MutableMapping
 
 from ...clustering import dbscan_clusters
 from ...selection import muon_region_labels
+from ..masking import get_active_mask
 from ..pipeline import CutStep, ParamSpec, StepResult
 
 
@@ -24,11 +25,13 @@ class DBSCANClusterProducer(CutStep):
 
         labels = muon_region_labels(hits, muon_track, r_core=5.0, r_near=25.0)
         mask_far = labels == 2
+        active_mask = get_active_mask(context, len(hits))
+        effective_mask = active_mask & mask_far
         clusters = dbscan_clusters(
             hits,
             eps_cm=float(self.params.get("eps_cm", 1.5)),
             min_samples=int(self.params.get("min_samples", 10)),
-            mask=mask_far,
+            mask=effective_mask,
         )
         clusters = [
             c

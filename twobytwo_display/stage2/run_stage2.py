@@ -15,6 +15,8 @@ def run_stage2_file(input_h5, config_path, output_summary_path=None, max_events=
     clusters_per_event = []
     n_failed = 0
     n_processed = 0
+    total_repeated_pixel_hits = 0
+    total_repeated_pixels = 0
     try:
         n_total = int(flow.n_events())
         n_target = n_total if max_events is None else min(n_total, int(max_events))
@@ -33,6 +35,8 @@ def run_stage2_file(input_h5, config_path, output_summary_path=None, max_events=
                 )
                 clusters = out.get("clusters", []) or []
                 clusters_per_event.append(int(len(clusters)))
+                total_repeated_pixel_hits += int(out.get("n_repeated_pixel_hits", 0) or 0)
+                total_repeated_pixels += int(out.get("n_repeated_pixels", 0) or 0)
                 n_processed += 1
             except Exception:
                 n_failed += 1
@@ -60,6 +64,8 @@ def run_stage2_file(input_h5, config_path, output_summary_path=None, max_events=
         "clusters_per_event_min": cmin,
         "clusters_per_event_max": cmax,
         "clusters_per_event_mean": cmean,
+        "total_repeated_pixel_hits": int(total_repeated_pixel_hits),
+        "total_repeated_pixels": int(total_repeated_pixels),
     }
 
     if output_summary_path is not None:

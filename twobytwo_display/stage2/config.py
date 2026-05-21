@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping
 
 import yaml
 
-from .cuts import DBSCANClusterProducer
+from .cuts import DBSCANClusterProducer, RepeatedPixelFilter
 from .pipeline import CutRegistry, Stage2Pipeline
 
 
@@ -19,6 +19,7 @@ class PipelineStepConfig:
 
 def default_registry() -> CutRegistry:
     reg = CutRegistry()
+    reg.register(RepeatedPixelFilter.name, RepeatedPixelFilter)
     reg.register(DBSCANClusterProducer.name, DBSCANClusterProducer)
     return reg
 

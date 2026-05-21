@@ -16,7 +16,7 @@ import panel as pn
 import plotly.graph_objects as go
 
 from twobytwo_display.clustering import angle_to_z_of_centroid_line
-from twobytwo_display.stage2.cuts import DBSCANClusterProducer
+from twobytwo_display.stage2.cuts import DBSCANClusterProducer, RepeatedPixelFilter
 from twobytwo_display.stage2.config import dump_pipeline_config, load_pipeline_config
 from twobytwo_display.stage2.ui_config import (
     apply_stage2_config_to_dbscan_values,
@@ -103,6 +103,12 @@ show_muon = pn.widgets.Checkbox(name="Show rock muon track", value=False)
 
 # clustering
 show_clusters = pn.widgets.Checkbox(name="Enable DBSCAN clusters", value=False)
+show_repeated_pixel_filter = pn.widgets.Checkbox(name="Enable repeated pixel filter", value=False)
+_repeated_widgets = widgets_from_param_specs(RepeatedPixelFilter.param_specs)
+repeated_max_hits = _repeated_widgets["max_hits_per_pixel"]
+repeated_pixel_fields = _repeated_widgets["pixel_fields"]
+repeated_round_decimals = _repeated_widgets["round_decimals"]
+
 _dbscan_widgets = widgets_from_param_specs(DBSCANClusterProducer.param_specs)
 db_eps = _dbscan_widgets["eps_cm"]
 db_min = _dbscan_widgets["min_samples"]
@@ -230,6 +236,10 @@ def _refresh_control_visibility():
     mc_topk.visible = truth_enabled and truth_mode.value == "backtrack"
     mc_minw.visible = truth_enabled and truth_mode.value == "backtrack"
 
+    repeated_max_hits.visible = bool(show_repeated_pixel_filter.value)
+    repeated_pixel_fields.visible = bool(show_repeated_pixel_filter.value)
+    repeated_round_decimals.visible = bool(show_repeated_pixel_filter.value)
+
     db_eps.visible = bool(show_clusters.value)
     db_min.visible = bool(show_clusters.value)
     cluster_min_hits.visible = bool(show_clusters.value)
@@ -241,13 +251,23 @@ def _compute_clusters(hits, muon_track):
     if not show_clusters.value:
         clusters_info.object = ""
         return None
+    context = {"hits": hits, "muon_track": muon_track}
+    if show_repeated_pixel_filter.value:
+        filter_step = RepeatedPixelFilter(
+            max_hits_per_pixel=int(repeated_max_hits.value),
+            pixel_fields=str(repeated_pixel_fields.value),
+            round_decimals=int(repeated_round_decimals.value),
+        )
+        context.update(filter_step.run(context).data)
+
     producer = DBSCANClusterProducer(
         eps_cm=float(db_eps.value),
         min_samples=int(db_min.value),
         cluster_min_hits=int(cluster_min_hits.value),
         cluster_max_extent_cm=float(cluster_max_extent.value),
     )
-    clusters = producer.run({"hits": hits, "muon_track": muon_track}).data.get("clusters", [])
+    context.update(producer.run(context).data)
+    clusters = context.get("clusters", [])
     if not clusters:
         clusters_info.object = "**Clusters kept:** 0"
         return []
@@ -421,6 +441,10 @@ for w in [
     mc_max_segments,
     mc_topk,
     mc_minw,
+    show_repeated_pixel_filter,
+    repeated_max_hits,
+    repeated_pixel_fields,
+    repeated_round_decimals,
     show_clusters,
     db_eps,
     db_min,
@@ -451,6 +475,7 @@ truth_card = pn.Card(
     title="Truth overlay",
     collapsed=False,
 )
+repeated_filter_card = pn.Card(show_repeated_pixel_filter, repeated_max_hits, repeated_pixel_fields, repeated_round_decimals, title="Repeated pixel filter", collapsed=True)
 cluster_card = pn.Card(show_clusters, db_eps, db_min, cluster_min_hits, cluster_max_extent, clusters_info, title="Clustering", collapsed=True)
 stage2_cfg_card = pn.Card(stage2_cfg_path, pn.Row(stage2_load_btn, stage2_save_btn), stage2_cfg_status, title="Stage 2 config", collapsed=True)
 muon_card = pn.Card(show_muon, title="Muon track", collapsed=True)
@@ -461,6 +486,7 @@ sidebar = pn.Column(
     navigation_card,
     display_card,
     truth_card,
+    repeated_filter_card,
     cluster_card,
     stage2_cfg_card,
     muon_card,

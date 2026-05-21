@@ -47,3 +47,13 @@ def test_run_stage2_module_does_not_emit_runpy_warning(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert "found in sys.modules" not in proc.stderr
     assert out.exists()
+
+
+def test_run_stage2_file_with_repeated_pixel_pipeline():
+    summary = run_stage2_file(
+        "tests/sample_data.hdf5",
+        "configs/stage2/repeated_pixel_then_dbscan.yaml",
+        max_events=2,
+    )
+    assert "total_repeated_pixel_hits" in summary
+    assert "total_repeated_pixels" in summary
