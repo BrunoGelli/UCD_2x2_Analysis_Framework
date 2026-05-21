@@ -1,14 +1,8 @@
 pipeline:
-- name: repeated_pixel_filter
-  enabled: false
-  params:
-    max_hits_per_pixel: 2
-    pixel_fields: y,z
-    round_decimals: 3
-- name: dbscan_cluster_producer
-  enabled: false
-  params:
-    eps_cm: 1.5
-    min_samples: 1
-    cluster_min_hits: 1
-    cluster_max_extent_cm: 8.0
+  - name: dbscan_cluster_producer
+    enabled: true
+    params:
+      eps_cm: 1.5
+      min_samples: 10
+      cluster_min_hits: 20
+      cluster_max_extent_cm: 8.0
