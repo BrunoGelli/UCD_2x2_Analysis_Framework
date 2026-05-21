@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from twobytwo_display.stage2.config import dump_pipeline_config, load_pipeline_config
-from twobytwo_display.stage2.ui_config import (
+from ucd2x2.stage2.config import dump_pipeline_config, load_pipeline_config
+from ucd2x2.stage2.ui_config import (
     apply_stage2_config_to_dbscan_values,
     build_stage2_config_from_dbscan_values,
 )

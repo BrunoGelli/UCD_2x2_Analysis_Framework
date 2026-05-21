@@ -1,7 +1,7 @@
 import numpy as np
 
-from twobytwo_display.stage2.cuts import DBSCANClusterProducer
-from twobytwo_display.stage2.pipeline import CutStep, Stage2Pipeline, StepResult
+from ucd2x2.stage2.cuts import DBSCANClusterProducer
+from ucd2x2.stage2.pipeline import CutStep, Stage2Pipeline, StepResult
 
 
 def _make_synthetic_hits():

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from twobytwo_display.stage2.config import (
+from ucd2x2.stage2.config import (
     default_registry,
     dump_pipeline_config,
     load_pipeline,

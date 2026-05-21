@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "twobytwo-display"
+name = "ucd2x2-analysis"
 version = "0.1.0"
-description = "2x2 Demonstrator event display (Panel web app) for ndlar_flow HDF5 files"
+description = "UCD 2x2 analysis framework (event display + Stage 2 pipeline)"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -18,13 +18,16 @@ dependencies = [
   "PyYAML",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
 [tool.setuptools.packages.find]
-include = ["twobytwo_display*"]
+where = ["src"]
+include = ["ucd2x2*"]
 exclude = ["tests*", "outputs*"]
 
 [project.urls]
 Home = "https://example.invalid"
-
 
 [project.optional-dependencies]
 dev = [

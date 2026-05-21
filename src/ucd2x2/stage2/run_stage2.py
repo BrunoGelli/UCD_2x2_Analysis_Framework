@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from ..io import FlowFile
+from ucd2x2.core.io import FlowFile
 from .config import load_pipeline
 
 

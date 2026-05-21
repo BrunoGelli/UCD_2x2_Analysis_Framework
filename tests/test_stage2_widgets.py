@@ -1,8 +1,8 @@
 import panel as pn
 
-from twobytwo_display.stage2.cuts import DBSCANClusterProducer
-from twobytwo_display.stage2.pipeline import ParamSpec
-from twobytwo_display.stage2.widgets import widget_from_param_spec, widgets_from_param_specs
+from ucd2x2.stage2.cuts import DBSCANClusterProducer
+from ucd2x2.stage2.pipeline import ParamSpec
+from ucd2x2.stage2.widgets import widget_from_param_spec, widgets_from_param_specs
 
 
 def test_widget_from_param_spec_float():

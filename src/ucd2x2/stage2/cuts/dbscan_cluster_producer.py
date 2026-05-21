@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, MutableMapping
 
-from ...clustering import dbscan_clusters
-from ...selection import muon_region_labels
+from ucd2x2.core.clustering import dbscan_clusters
+from ucd2x2.core.selection import muon_region_labels
 from ..masking import get_active_mask
 from ..pipeline import CutStep, ParamSpec, StepResult
 
