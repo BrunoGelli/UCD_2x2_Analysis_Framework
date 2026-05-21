@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, MutableMapping
 
 from ...clustering import dbscan_clusters
-from ...viz import muon_region_labels
+from ...selection import muon_region_labels
 from ..pipeline import CutStep, ParamSpec, StepResult
 
 
@@ -13,7 +13,7 @@ class DBSCANClusterProducer(CutStep):
         ParamSpec("eps_cm", 1.5, "DBSCAN neighborhood radius in cm"),
         ParamSpec("min_samples", 10, "DBSCAN min_samples"),
         ParamSpec("cluster_min_hits", 20, "Minimum hits to keep a cluster"),
-        ParamSpec("cluster_max_extent_cm", 40.0, "Maximum extent to keep a cluster"),
+        ParamSpec("cluster_max_extent_cm", 8.0, "Maximum extent to keep a cluster"),
     ]
 
     def run(self, context: MutableMapping[str, Any]) -> StepResult:
@@ -34,6 +34,6 @@ class DBSCANClusterProducer(CutStep):
             c
             for c in clusters
             if c.n_hits >= int(self.params.get("cluster_min_hits", 20))
-            and c.extent_max_cm <= float(self.params.get("cluster_max_extent_cm", 40.0))
+            and c.extent_max_cm <= float(self.params.get("cluster_max_extent_cm", 8.0))
         ]
         return StepResult({"clusters": clusters})

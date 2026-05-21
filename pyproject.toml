@@ -15,10 +15,12 @@ dependencies = [
   "plotly",
   "panel>=1.4",
   "scikit-learn",
+  "PyYAML",
 ]
 
-[tool.setuptools]
-packages = ["twobytwo_display", "twobytwo_display.stage2", "twobytwo_display.stage2.cuts"]
+[tool.setuptools.packages.find]
+include = ["twobytwo_display*"]
+exclude = ["tests*", "outputs*"]
 
 [project.urls]
 Home = "https://example.invalid"

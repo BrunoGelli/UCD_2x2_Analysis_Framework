@@ -7,3 +7,13 @@ __all__ = [
     "Stage2Pipeline",
     "CutRegistry",
 ]
+
+from .config import (
+    PipelineStepConfig,
+    default_registry,
+    pipeline_from_dict,
+    pipeline_to_dict,
+    load_pipeline_config,
+    load_pipeline,
+    dump_pipeline_config,
+)
