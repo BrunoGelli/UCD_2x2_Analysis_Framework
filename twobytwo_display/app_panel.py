@@ -14,14 +14,14 @@ import numpy as np
 import panel as pn
 import plotly.graph_objects as go
 
-from twobytwo_display.clustering import angle_to_z_of_centroid_line, dbscan_clusters
+from twobytwo_display.clustering import angle_to_z_of_centroid_line
+from twobytwo_display.stage2.cuts import DBSCANClusterProducer
 from twobytwo_display.io import FlowFile
 import twobytwo_display.viz as viz
 from twobytwo_display.viz import (
     make_plotly_2d_projections,
     make_plotly_3d,
     make_plotly_analysis,
-    muon_region_labels,
 )
 
 pn.extension("plotly")
@@ -180,10 +180,13 @@ def _compute_clusters(hits, muon_track):
     if not show_clusters.value:
         clusters_info.object = ""
         return None
-    labels = muon_region_labels(hits, muon_track, r_core=5.0, r_near=25.0)
-    mask_far = labels == 2
-    clusters = dbscan_clusters(hits, eps_cm=float(db_eps.value), min_samples=int(db_min.value), mask=mask_far)
-    clusters = [c for c in clusters if c.n_hits >= int(cluster_min_hits.value) and c.extent_max_cm <= float(cluster_max_extent.value)]
+    producer = DBSCANClusterProducer(
+        eps_cm=float(db_eps.value),
+        min_samples=int(db_min.value),
+        cluster_min_hits=int(cluster_min_hits.value),
+        cluster_max_extent_cm=float(cluster_max_extent.value),
+    )
+    clusters = producer.run({"hits": hits, "muon_track": muon_track}).data.get("clusters", [])
     if not clusters:
         clusters_info.object = "**Clusters kept:** 0"
         return []

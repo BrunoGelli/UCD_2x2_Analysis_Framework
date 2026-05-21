@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["twobytwo_display"]
+packages = ["twobytwo_display", "twobytwo_display.stage2", "twobytwo_display.stage2.cuts"]
 
 [project.urls]
 Home = "https://example.invalid"
