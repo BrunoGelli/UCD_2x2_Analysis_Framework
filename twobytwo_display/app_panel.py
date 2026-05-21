@@ -9,19 +9,26 @@ from __future__ import annotations
 import argparse
 import bisect
 import os
+from pathlib import Path
 
 import numpy as np
 import panel as pn
 import plotly.graph_objects as go
 
-from twobytwo_display.clustering import angle_to_z_of_centroid_line, dbscan_clusters
+from twobytwo_display.clustering import angle_to_z_of_centroid_line
+from twobytwo_display.stage2.cuts import DBSCANClusterProducer
+from twobytwo_display.stage2.config import dump_pipeline_config, load_pipeline_config
+from twobytwo_display.stage2.ui_config import (
+    apply_stage2_config_to_dbscan_values,
+    build_stage2_config_from_dbscan_values,
+)
+from twobytwo_display.stage2.widgets import widgets_from_param_specs
 from twobytwo_display.io import FlowFile
 import twobytwo_display.viz as viz
 from twobytwo_display.viz import (
     make_plotly_2d_projections,
     make_plotly_3d,
     make_plotly_analysis,
-    muon_region_labels,
 )
 
 pn.extension("plotly")
@@ -96,10 +103,11 @@ show_muon = pn.widgets.Checkbox(name="Show rock muon track", value=False)
 
 # clustering
 show_clusters = pn.widgets.Checkbox(name="Enable DBSCAN clusters", value=False)
-db_eps = pn.widgets.FloatInput(name="DBSCAN eps [cm]", value=1.5, step=0.1)
-db_min = pn.widgets.IntInput(name="DBSCAN min_samples", value=10, step=1)
-cluster_min_hits = pn.widgets.IntInput(name="Keep nhits ≥", value=20, step=1)
-cluster_max_extent = pn.widgets.FloatInput(name="Keep max extent ≤ [cm]", value=8.0, step=0.5)
+_dbscan_widgets = widgets_from_param_specs(DBSCANClusterProducer.param_specs)
+db_eps = _dbscan_widgets["eps_cm"]
+db_min = _dbscan_widgets["min_samples"]
+cluster_min_hits = _dbscan_widgets["cluster_min_hits"]
+cluster_max_extent = _dbscan_widgets["cluster_max_extent_cm"]
 clusters_info = pn.pane.Markdown("", height=180)
 
 view3d = pn.pane.Plotly(sizing_mode="stretch_both")
@@ -108,6 +116,59 @@ analysis_text = pn.pane.Markdown("", sizing_mode="stretch_width")
 analysis_plot = pn.pane.Plotly(min_height=450, sizing_mode="stretch_width")
 view_analysis = pn.Column(analysis_text, analysis_plot, sizing_mode="stretch_both")
 
+# stage2 config
+stage2_cfg_path = pn.widgets.TextInput(name="Stage2 config path", value="configs/stage2/dbscan_default.yaml")
+stage2_load_btn = pn.widgets.Button(name="Load Stage 2 config")
+stage2_save_btn = pn.widgets.Button(name="Save Stage 2 config")
+stage2_cfg_status = pn.pane.Markdown("", height=80)
+
+
+
+def _dbscan_widget_values():
+    return {
+        "show_clusters": bool(show_clusters.value),
+        "eps_cm": float(db_eps.value),
+        "min_samples": int(db_min.value),
+        "cluster_min_hits": int(cluster_min_hits.value),
+        "cluster_max_extent_cm": float(cluster_max_extent.value),
+    }
+
+
+def _apply_dbscan_widget_values(values):
+    show_clusters.value = bool(values.get("show_clusters", show_clusters.value))
+    db_eps.value = float(values.get("eps_cm", db_eps.value))
+    db_min.value = int(values.get("min_samples", db_min.value))
+    cluster_min_hits.value = int(values.get("cluster_min_hits", cluster_min_hits.value))
+    cluster_max_extent.value = float(values.get("cluster_max_extent_cm", cluster_max_extent.value))
+
+
+def _set_stage2_cfg_status(message: str, ok: bool = True):
+    icon = "✅" if ok else "❌"
+    stage2_cfg_status.object = f"{icon} {message}"
+
+
+def _save_stage2_config(_=None):
+    try:
+        config = build_stage2_config_from_dbscan_values(_dbscan_widget_values())
+        yaml_text = dump_pipeline_config(config)
+        path = Path(stage2_cfg_path.value.strip())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml_text)
+        _set_stage2_cfg_status(f"Saved Stage 2 config to `{path}`", ok=True)
+    except Exception as exc:
+        _set_stage2_cfg_status(f"Failed to save config: {exc}", ok=False)
+
+
+def _load_stage2_config(_=None):
+    try:
+        path = Path(stage2_cfg_path.value.strip())
+        config = load_pipeline_config(path)
+        values = _dbscan_widget_values()
+        apply_stage2_config_to_dbscan_values(config, values)
+        _apply_dbscan_widget_values(values)
+        _set_stage2_cfg_status(f"Loaded Stage 2 config from `{path}`", ok=True)
+    except Exception as exc:
+        _set_stage2_cfg_status(f"Failed to load config: {exc}", ok=False)
 
 def _set_status(message: str, ok: bool = True):
     icon = "✅" if ok else "❌"
@@ -180,10 +241,13 @@ def _compute_clusters(hits, muon_track):
     if not show_clusters.value:
         clusters_info.object = ""
         return None
-    labels = muon_region_labels(hits, muon_track, r_core=5.0, r_near=25.0)
-    mask_far = labels == 2
-    clusters = dbscan_clusters(hits, eps_cm=float(db_eps.value), min_samples=int(db_min.value), mask=mask_far)
-    clusters = [c for c in clusters if c.n_hits >= int(cluster_min_hits.value) and c.extent_max_cm <= float(cluster_max_extent.value)]
+    producer = DBSCANClusterProducer(
+        eps_cm=float(db_eps.value),
+        min_samples=int(db_min.value),
+        cluster_min_hits=int(cluster_min_hits.value),
+        cluster_max_extent_cm=float(cluster_max_extent.value),
+    )
+    clusters = producer.run({"hits": hits, "muon_track": muon_track}).data.get("clusters", [])
     if not clusters:
         clusters_info.object = "**Clusters kept:** 0"
         return []
@@ -334,6 +398,8 @@ def _open_file(_=None):
 open_btn.on_click(_open_file)
 next_btn.on_click(_next_event)
 prev_btn.on_click(_prev_event)
+stage2_load_btn.on_click(_load_stage2_config)
+stage2_save_btn.on_click(_save_stage2_config)
 
 event_slider.param.watch(lambda e: _goto_event(e.new), "value")
 event_input.param.watch(lambda e: _goto_event(e.new), "value")
@@ -386,6 +452,7 @@ truth_card = pn.Card(
     collapsed=False,
 )
 cluster_card = pn.Card(show_clusters, db_eps, db_min, cluster_min_hits, cluster_max_extent, clusters_info, title="Clustering", collapsed=True)
+stage2_cfg_card = pn.Card(stage2_cfg_path, pn.Row(stage2_load_btn, stage2_save_btn), stage2_cfg_status, title="Stage 2 config", collapsed=True)
 muon_card = pn.Card(show_muon, title="Muon track", collapsed=True)
 
 sidebar = pn.Column(
@@ -395,6 +462,7 @@ sidebar = pn.Column(
     display_card,
     truth_card,
     cluster_card,
+    stage2_cfg_card,
     muon_card,
     width=420,
     sizing_mode="stretch_height",
