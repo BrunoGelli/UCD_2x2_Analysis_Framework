@@ -123,6 +123,59 @@ analysis_text = pn.pane.Markdown("", sizing_mode="stretch_width")
 analysis_plot = pn.pane.Plotly(min_height=450, sizing_mode="stretch_width")
 view_analysis = pn.Column(analysis_text, analysis_plot, sizing_mode="stretch_both")
 
+# stage2 config
+stage2_cfg_path = pn.widgets.TextInput(name="Stage2 config path", value="configs/stage2/dbscan_default.yaml")
+stage2_load_btn = pn.widgets.Button(name="Load Stage 2 config")
+stage2_save_btn = pn.widgets.Button(name="Save Stage 2 config")
+stage2_cfg_status = pn.pane.Markdown("", height=80)
+
+
+
+def _dbscan_widget_values():
+    return {
+        "show_clusters": bool(show_clusters.value),
+        "eps_cm": float(db_eps.value),
+        "min_samples": int(db_min.value),
+        "cluster_min_hits": int(cluster_min_hits.value),
+        "cluster_max_extent_cm": float(cluster_max_extent.value),
+    }
+
+
+def _apply_dbscan_widget_values(values):
+    show_clusters.value = bool(values.get("show_clusters", show_clusters.value))
+    db_eps.value = float(values.get("eps_cm", db_eps.value))
+    db_min.value = int(values.get("min_samples", db_min.value))
+    cluster_min_hits.value = int(values.get("cluster_min_hits", cluster_min_hits.value))
+    cluster_max_extent.value = float(values.get("cluster_max_extent_cm", cluster_max_extent.value))
+
+
+def _set_stage2_cfg_status(message: str, ok: bool = True):
+    icon = "✅" if ok else "❌"
+    stage2_cfg_status.object = f"{icon} {message}"
+
+
+def _save_stage2_config(_=None):
+    try:
+        config = build_stage2_config_from_dbscan_values(_dbscan_widget_values())
+        yaml_text = dump_pipeline_config(config)
+        path = Path(stage2_cfg_path.value.strip())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml_text)
+        _set_stage2_cfg_status(f"Saved Stage 2 config to `{path}`", ok=True)
+    except Exception as exc:
+        _set_stage2_cfg_status(f"Failed to save config: {exc}", ok=False)
+
+
+def _load_stage2_config(_=None):
+    try:
+        path = Path(stage2_cfg_path.value.strip())
+        config = load_pipeline_config(path)
+        values = _dbscan_widget_values()
+        apply_stage2_config_to_dbscan_values(config, values)
+        _apply_dbscan_widget_values(values)
+        _set_stage2_cfg_status(f"Loaded Stage 2 config from `{path}`", ok=True)
+    except Exception as exc:
+        _set_stage2_cfg_status(f"Failed to load config: {exc}", ok=False)
 
 def _stage2_config_from_ui():
     steps = []
