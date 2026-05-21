@@ -1,0 +1,8 @@
+pipeline:
+  - name: dbscan_cluster_producer
+    enabled: true
+    params:
+      eps_cm: 1.5
+      min_samples: 10
+      cluster_min_hits: 20
+      cluster_max_extent_cm: 8.0
