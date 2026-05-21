@@ -9,6 +9,12 @@ class ParamSpec:
     name: str
     default: Any
     description: str = ""
+    label: str | None = None
+    kind: str | None = None
+    min_value: float | int | None = None
+    max_value: float | int | None = None
+    step: float | int | None = None
+    options: list[Any] | None = None
 
 
 @dataclass

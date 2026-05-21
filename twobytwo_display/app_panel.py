@@ -22,6 +22,7 @@ from twobytwo_display.stage2.ui_config import (
     apply_stage2_config_to_dbscan_values,
     build_stage2_config_from_dbscan_values,
 )
+from twobytwo_display.stage2.widgets import widgets_from_param_specs
 from twobytwo_display.io import FlowFile
 import twobytwo_display.viz as viz
 from twobytwo_display.viz import (
@@ -102,10 +103,11 @@ show_muon = pn.widgets.Checkbox(name="Show rock muon track", value=False)
 
 # clustering
 show_clusters = pn.widgets.Checkbox(name="Enable DBSCAN clusters", value=False)
-db_eps = pn.widgets.FloatInput(name="DBSCAN eps [cm]", value=1.5, step=0.1)
-db_min = pn.widgets.IntInput(name="DBSCAN min_samples", value=10, step=1)
-cluster_min_hits = pn.widgets.IntInput(name="Keep nhits ≥", value=20, step=1)
-cluster_max_extent = pn.widgets.FloatInput(name="Keep max extent ≤ [cm]", value=8.0, step=0.5)
+_dbscan_widgets = widgets_from_param_specs(DBSCANClusterProducer.param_specs)
+db_eps = _dbscan_widgets["eps_cm"]
+db_min = _dbscan_widgets["min_samples"]
+cluster_min_hits = _dbscan_widgets["cluster_min_hits"]
+cluster_max_extent = _dbscan_widgets["cluster_max_extent_cm"]
 clusters_info = pn.pane.Markdown("", height=180)
 
 view3d = pn.pane.Plotly(sizing_mode="stretch_both")

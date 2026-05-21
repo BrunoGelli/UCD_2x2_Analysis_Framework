@@ -10,10 +10,10 @@ from ..pipeline import CutStep, ParamSpec, StepResult
 class DBSCANClusterProducer(CutStep):
     name = "dbscan_cluster_producer"
     param_specs = [
-        ParamSpec("eps_cm", 1.5, "DBSCAN neighborhood radius in cm"),
-        ParamSpec("min_samples", 10, "DBSCAN min_samples"),
-        ParamSpec("cluster_min_hits", 20, "Minimum hits to keep a cluster"),
-        ParamSpec("cluster_max_extent_cm", 8.0, "Maximum extent to keep a cluster"),
+        ParamSpec("eps_cm", 1.5, "DBSCAN neighborhood radius in cm", label="DBSCAN eps [cm]", kind="float", step=0.1),
+        ParamSpec("min_samples", 10, "DBSCAN min_samples", label="DBSCAN min_samples", kind="int", step=1),
+        ParamSpec("cluster_min_hits", 20, "Minimum hits to keep a cluster", label="Keep nhits ≥", kind="int", step=1),
+        ParamSpec("cluster_max_extent_cm", 8.0, "Maximum extent to keep a cluster", label="Keep max extent ≤ [cm]", kind="float", step=0.5),
     ]
 
     def run(self, context: MutableMapping[str, Any]) -> StepResult:
