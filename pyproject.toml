@@ -26,6 +26,10 @@ where = ["src"]
 include = ["ucd2x2*"]
 exclude = ["tests*", "outputs*"]
 
+
+[project.scripts]
+ucd2x2 = "ucd2x2.cli:main"
+
 [project.urls]
 Home = "https://example.invalid"
 
