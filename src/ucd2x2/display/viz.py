@@ -59,20 +59,36 @@ def _hover_customdata(hits):
 
 
 HIGHLIGHT_TILE_LABEL = "Tile 5 (IOG 6)"
+TILE_BOX_DEPTH_CM = 1.0
+
+
+def _box_edge_coordinates(box, depth_cm=0.0):
+    """Return Plotly coordinates for all 12 edges of an axis-aligned box."""
+    zmin = box.zmin - depth_cm / 2
+    zmax = box.zmax + depth_cm / 2
+    corners = np.array([
+        [box.xmin, box.ymin, zmin], [box.xmax, box.ymin, zmin],
+        [box.xmax, box.ymax, zmin], [box.xmin, box.ymax, zmin],
+        [box.xmin, box.ymin, zmax], [box.xmax, box.ymin, zmax],
+        [box.xmax, box.ymax, zmax], [box.xmin, box.ymax, zmax],
+    ], dtype=float)
+    edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6),
+             (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
+    x, y, z = [], [], []
+    for i, j in edges:
+        x += [corners[i, 2], corners[j, 2], None]
+        y += [corners[i, 0], corners[j, 0], None]
+        z += [corners[i, 1], corners[j, 1], None]
+    return x, y, z
 
 
 def _tile_edge_trace_3d(box):
-    corners = np.array([
-        [box.xmin, box.ymin, box.zmin], [box.xmax, box.ymin, box.zmin],
-        [box.xmax, box.ymax, box.zmin], [box.xmin, box.ymax, box.zmin],
-    ], dtype=float)
-    corners = np.vstack([corners, corners[0]])
+    x, y, z = _box_edge_coordinates(box, depth_cm=TILE_BOX_DEPTH_CM)
     return go.Scatter3d(
-        x=corners[:, 2], y=corners[:, 0], z=corners[:, 1], mode="lines",
-        line=dict(color="red", width=6), name=HIGHLIGHT_TILE_LABEL,
+        x=x, y=y, z=z, mode="lines", line=dict(color="red", width=6),
+        name=HIGHLIGHT_TILE_LABEL,
         hovertemplate="Tile 5 on IO group 6<extra></extra>",
     )
-
 
 def _tile_edge_trace_2d(box, projection):
     if projection == "xy":
@@ -123,18 +139,9 @@ def make_plotly_2d_projections(hits, color_mode="Q", max_hits=40000, point_size=
             row=r,
             col=col,
         )
-        if len(highlight_hits):
-            highlight_x, highlight_y = ((highlight_hits["x"], highlight_hits["y"]) if i == 0 else
-                                        (highlight_hits["x"], highlight_hits["z"]) if i == 1 else
-                                        (highlight_hits["y"], highlight_hits["z"]))
-            fig.add_trace(
-                go.Scattergl(
-                    x=highlight_x, y=highlight_y, mode="markers", name=HIGHLIGHT_LABEL,
-                    marker=dict(size=point_size + 4, color="red", symbol="circle-open", line=dict(width=2)),
-                    customdata=_hover_customdata(highlight_hits), hovertemplate=hover,
-                    showlegend=(i == 0),
-                ), row=r, col=col,
-            )
+        tile_trace = _tile_edge_trace_2d(tile_5_iog_6_box_cm(), ("xy", "xz", "yz")[i])
+        tile_trace.showlegend = i == 0
+        fig.add_trace(tile_trace, row=r, col=col)
         fig.update_xaxes(title_text=xl, row=r, col=col)
         fig.update_yaxes(title_text=yl, row=r, col=col)
 
@@ -207,26 +214,12 @@ def make_plotly_3d(
             ),
         ))
 
-    if len(highlight_hits):
-        fig.add_trace(go.Scatter3d(
-            x=highlight_hits["z"], y=highlight_hits["x"], z=highlight_hits["y"],
-            mode="markers", name=HIGHLIGHT_LABEL,
-            marker=dict(size=point_size + 4, color="red", symbol="circle-open", line=dict(width=2)),
-            customdata=_hover_customdata(highlight_hits),
-            hovertemplate="z=%{x:.2f}<br>x=%{y:.2f}<br>y=%{z:.2f}<br>Q=%{customdata[0]:.4g}<br>IO group=%{customdata[3]}<br>IO channel=%{customdata[4]}<extra></extra>",
-        ))
+    fig.add_trace(_tile_edge_trace_3d(tile_5_iog_6_box_cm()))
 
     if show_boxes:
         for _, b in module_boxes_cm().items():
-            corners = np.array([[b.xmin, b.ymin, b.zmin], [b.xmax, b.ymin, b.zmin], [b.xmax, b.ymax, b.zmin], [b.xmin, b.ymax, b.zmin],
-                                [b.xmin, b.ymin, b.zmax], [b.xmax, b.ymin, b.zmax], [b.xmax, b.ymax, b.zmax], [b.xmin, b.ymax, b.zmax]], dtype=float)
-            edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
-            ex, ey, ez = [], [], []
-            for i, j in edges:
-                ex += [corners[i, 2], corners[j, 2], None]
-                ey += [corners[i, 0], corners[j, 0], None]
-                ez += [corners[i, 1], corners[j, 1], None]
-            fig.add_trace(go.Scatter3d(x=ex, y=ey, z=ez, mode="lines", line=dict(width=2), showlegend=False, opacity=0.5))
+            x, y, z = _box_edge_coordinates(b)
+            fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode="lines", line=dict(width=2), showlegend=False, opacity=0.5))
 
     if muon_track is not None:
         A = np.array([muon_track["x_start"], muon_track["y_start"], muon_track["z_start"]], dtype=float)
