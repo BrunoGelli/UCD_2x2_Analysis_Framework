@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from ucd2x2.core.geometry import module_boxes_cm
+from ucd2x2.core.geometry import module_boxes_cm, tile_5_iog_6_box_cm
 from ucd2x2.core.selection import muon_region_labels
 
 
@@ -43,6 +43,38 @@ def _hover_customdata(hits):
     ], axis=1)
 
 
+HIGHLIGHT_TILE_LABEL = "Tile 5 (IOG 6)"
+
+
+def _tile_edge_trace_3d(box):
+    corners = np.array([
+        [box.xmin, box.ymin, box.zmin], [box.xmax, box.ymin, box.zmin],
+        [box.xmax, box.ymax, box.zmin], [box.xmin, box.ymax, box.zmin],
+    ], dtype=float)
+    corners = np.vstack([corners, corners[0]])
+    return go.Scatter3d(
+        x=corners[:, 2], y=corners[:, 0], z=corners[:, 1], mode="lines",
+        line=dict(color="red", width=6), name=HIGHLIGHT_TILE_LABEL,
+        hovertemplate="Tile 5 on IO group 6<extra></extra>",
+    )
+
+
+def _tile_edge_trace_2d(box, projection):
+    if projection == "xy":
+        x = [box.xmin, box.xmax, box.xmax, box.xmin, box.xmin]
+        y = [box.ymin, box.ymin, box.ymax, box.ymax, box.ymin]
+    elif projection == "xz":
+        x = [box.xmin, box.xmax]
+        y = [box.zmin, box.zmax]
+    else:
+        x = [box.ymin, box.ymax]
+        y = [box.zmin, box.zmax]
+    return go.Scattergl(
+        x=x, y=y, mode="lines", line=dict(color="red", width=4),
+        name=HIGHLIGHT_TILE_LABEL,
+        hovertemplate="Tile 5 on IO group 6<extra></extra>",
+    )
+
 def make_plotly_2d_projections(hits, color_mode="Q", max_hits=40000, point_size=3, muon_track=None):
     if len(hits) == 0:
         fig = go.Figure()
@@ -75,6 +107,9 @@ def make_plotly_2d_projections(hits, color_mode="Q", max_hits=40000, point_size=
             row=r,
             col=col,
         )
+        tile_trace = _tile_edge_trace_2d(tile_5_iog_6_box_cm(), ("xy", "xz", "yz")[i])
+        tile_trace.showlegend = i == 0
+        fig.add_trace(tile_trace, row=r, col=col)
         fig.update_xaxes(title_text=xl, row=r, col=col)
         fig.update_yaxes(title_text=yl, row=r, col=col)
 
@@ -145,6 +180,8 @@ def make_plotly_3d(
                 colorbar=dict(title=clabel, len=0.55, thickness=16, y=0.48),
             ),
         ))
+
+    fig.add_trace(_tile_edge_trace_3d(tile_5_iog_6_box_cm()))
 
     if show_boxes:
         for _, b in module_boxes_cm().items():
