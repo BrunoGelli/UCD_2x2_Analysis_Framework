@@ -38,6 +38,15 @@ def module_boxes_cm() -> Dict[int, Box]:
     }
     return boxes
 
+def tile_5_iog_6_box_cm() -> Box:
+    """Return the anode-plane bounds for tile 5 served by IO group 6.
+
+    The bounds are in the detector ``x, y, z`` coordinate system and describe
+    the tile face (so ``zmin == zmax``), as used by the hit-coordinate mapping.
+    """
+    return Box(-33.34, -6.17, -62.04, -31.02, 2.01, 2.01)
+
+
 def module_centers_cm() -> Dict[int, Tuple[float, float, float]]:
     """Approx module centers (from technote text: centers at ±33.5 cm in x and z; y ~ 0)."""
     # Using the sign convention consistent with Table 1 bounds.
