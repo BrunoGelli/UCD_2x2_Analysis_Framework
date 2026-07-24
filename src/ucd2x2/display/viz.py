@@ -26,6 +26,11 @@ def color_array(hits, mode: str, muon_track=None, r_core=5.0, r_near=25.0):
     raise ValueError("mode must be one of: Q, t_drift, ts_pps, muon_region")
 
 
+HIGHLIGHT_IO_GROUP = 6
+HIGHLIGHT_IO_CHANNEL = 5
+HIGHLIGHT_LABEL = "Tile 5 (IOG 6)"
+
+
 def _sample_hits(hits, max_hits: int):
     if len(hits) > max_hits:
         idx = np.random.choice(len(hits), size=max_hits, replace=False)
@@ -33,13 +38,23 @@ def _sample_hits(hits, max_hits: int):
     return hits
 
 
+def _tile_5_iog_6_hits(hits):
+    """Return hits from tile 5 on IO group 6, if hardware fields exist."""
+    names = hits.dtype.names or ()
+    if "io_group" not in names or "io_channel" not in names:
+        return hits[:0]
+    return hits[(hits["io_group"] == HIGHLIGHT_IO_GROUP) & (hits["io_channel"] == HIGHLIGHT_IO_CHANNEL)]
+
+
 def _hover_customdata(hits):
-    module = hits["iogroup"].astype(int) if "iogroup" in (hits.dtype.names or ()) else np.full(len(hits), -1)
+    io_group = hits["io_group"].astype(int) if "io_group" in (hits.dtype.names or ()) else np.full(len(hits), -1)
+    io_channel = hits["io_channel"].astype(int) if "io_channel" in (hits.dtype.names or ()) else np.full(len(hits), -1)
     return np.stack([
         hits["Q"].astype(float),
         hits["t_drift"].astype(float) if "t_drift" in (hits.dtype.names or ()) else np.full(len(hits), np.nan),
         hits["ts_pps"].astype(float) if "ts_pps" in (hits.dtype.names or ()) else np.full(len(hits), np.nan),
-        module,
+        io_group,
+        io_channel,
     ], axis=1)
 
 
@@ -81,10 +96,11 @@ def make_plotly_2d_projections(hits, color_mode="Q", max_hits=40000, point_size=
         fig.update_layout(title="No hits in event")
         return fig
 
+    highlight_hits = _tile_5_iog_6_hits(hits)
     hits = _sample_hits(hits, max_hits)
     c, clabel = color_array(hits, color_mode, muon_track=muon_track)
     customdata = _hover_customdata(hits)
-    hover = "x=%{x:.2f}<br>y=%{y:.2f}<br>Q=%{customdata[0]:.3g}<br>t_drift=%{customdata[1]:.3g}<br>ts_pps=%{customdata[2]:.3g}<br>module=%{customdata[3]}<extra></extra>"
+    hover = "x=%{x:.2f}<br>y=%{y:.2f}<br>Q=%{customdata[0]:.3g}<br>t_drift=%{customdata[1]:.3g}<br>ts_pps=%{customdata[2]:.3g}<br>IO group=%{customdata[3]}<br>IO channel=%{customdata[4]}<extra></extra>"
 
     fig = make_subplots(rows=2, cols=2, subplot_titles=("XY", "XZ", "YZ", "Charge histogram"))
     projections = [
@@ -107,9 +123,18 @@ def make_plotly_2d_projections(hits, color_mode="Q", max_hits=40000, point_size=
             row=r,
             col=col,
         )
-        tile_trace = _tile_edge_trace_2d(tile_5_iog_6_box_cm(), ("xy", "xz", "yz")[i])
-        tile_trace.showlegend = i == 0
-        fig.add_trace(tile_trace, row=r, col=col)
+        if len(highlight_hits):
+            highlight_x, highlight_y = ((highlight_hits["x"], highlight_hits["y"]) if i == 0 else
+                                        (highlight_hits["x"], highlight_hits["z"]) if i == 1 else
+                                        (highlight_hits["y"], highlight_hits["z"]))
+            fig.add_trace(
+                go.Scattergl(
+                    x=highlight_x, y=highlight_y, mode="markers", name=HIGHLIGHT_LABEL,
+                    marker=dict(size=point_size + 4, color="red", symbol="circle-open", line=dict(width=2)),
+                    customdata=_hover_customdata(highlight_hits), hovertemplate=hover,
+                    showlegend=(i == 0),
+                ), row=r, col=col,
+            )
         fig.update_xaxes(title_text=xl, row=r, col=col)
         fig.update_yaxes(title_text=yl, row=r, col=col)
 
@@ -157,6 +182,7 @@ def make_plotly_3d(
         fig.update_layout(title="No hits in event")
         return fig
 
+    highlight_hits = _tile_5_iog_6_hits(hits)
     hits = _sample_hits(hits, max_hits)
     c, clabel = color_array(hits, color_mode, muon_track=muon_track, r_core=r_core, r_near=r_near)
 
@@ -181,7 +207,14 @@ def make_plotly_3d(
             ),
         ))
 
-    fig.add_trace(_tile_edge_trace_3d(tile_5_iog_6_box_cm()))
+    if len(highlight_hits):
+        fig.add_trace(go.Scatter3d(
+            x=highlight_hits["z"], y=highlight_hits["x"], z=highlight_hits["y"],
+            mode="markers", name=HIGHLIGHT_LABEL,
+            marker=dict(size=point_size + 4, color="red", symbol="circle-open", line=dict(width=2)),
+            customdata=_hover_customdata(highlight_hits),
+            hovertemplate="z=%{x:.2f}<br>x=%{y:.2f}<br>y=%{z:.2f}<br>Q=%{customdata[0]:.4g}<br>IO group=%{customdata[3]}<br>IO channel=%{customdata[4]}<extra></extra>",
+        ))
 
     if show_boxes:
         for _, b in module_boxes_cm().items():
