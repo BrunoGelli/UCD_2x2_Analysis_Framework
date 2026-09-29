@@ -191,6 +191,29 @@ product: do not copy it to a public web directory unless that event is approved
 for public release.
 
 The tile-5/IOG-6 highlight is removed from both old and new plotting paths.
+
+
+### Assemble a small shareable event showcase
+
+For a collaboration-facing page, browse candidates normally and click **Add current
+event** in the Showcase card for each event you want to keep. The event list is
+also editable directly, so you can paste something like:
+
+```text
+15488, 17267, 27203, 30111
+```
+
+Set the title/subtitle and click **Export showcase HTML**. The output contains one
+event at a time behind simple event tabs: a large 3D display, smooth browser-side
+rotation, orthogonal projections directly below, and collapsed technical metadata.
+Only the visible event rotates. The rotation uses `requestAnimationFrame` and
+layout-only `Plotly.relayout` updates at about 30 fps, avoiding hundreds of stored
+animation frames and avoiding the Jupyter/Panel websocket entirely.
+
+The showcase uses the current cleaning, color, detector-frame, point-size and
+plot-sampling settings. For a lightweight collaboration page, 3–6 events is a good
+target. The exported HTML embeds the plotted event data and Plotly JavaScript, so
+treat it as a derived data product and only publish/share it where appropriate.
 Nonpositive charges remain in the arrays and charge sums; they are displayed at
 the bottom of the positive-Q color scale rather than stretching it down to −12.
 
