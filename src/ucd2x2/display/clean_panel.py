@@ -73,6 +73,7 @@ class CleanBrowser:
         self._view3d_dict = None
         self._spin_angle = 0.0
         self._spin_callback = None
+        self._spin_link = None
         self.file = pn.widgets.TextInput(name="Completed FLOW file", value=args.h5)
         self.mask_file = pn.widgets.TextInput(name="Trusted mask PKL (optional)", value=args.hot_mask or "")
         self.csv_file = pn.widgets.TextInput(name="Candidate CSV (optional)", value=args.candidates or "")
@@ -135,13 +136,15 @@ class CleanBrowser:
         self.cprev.on_click(lambda _: self.step_candidate(-1))
         self.cnext.on_click(lambda _: self.step_candidate(1))
         self.export_button.on_click(self.export_current)
-        self.spin.param.watch(self.toggle_spin, "value")
         self.jump.param.watch(lambda e: self.goto(e.new), "value")
         self.pick.param.watch(lambda e: self.goto(e.new) if e.new is not None else None, "value")
         for widget in (self.event,self.clean,self.local,self.mean,self.fraction,self.disabled,
                        self.color,self.point_size,self.max_hits,self.boxes,self.frame):
             widget.param.watch(self.refresh,"value")
         pn.state.on_session_destroyed(lambda context: self.close())
+        # Panel recommends constructing periodic callbacks only once the server
+        # session is loaded. The toggle is then linked directly to cb.running.
+        pn.state.onload(self.init_spin_callback)
         self.load()
         self.goto(args.event)
 
@@ -211,16 +214,21 @@ class CleanBrowser:
         self.pick.value = values[(position+step) % len(values)]
         self.goto(self.pick.value)
 
-    def toggle_spin(self, event):
-        if event.new:
-            if self._spin_callback is None:
-                self._spin_callback = pn.state.add_periodic_callback(
-                    self.spin_tick, period=100, start=True
-                )
-            else:
-                self._spin_callback.start()
-        elif self._spin_callback is not None:
-            self._spin_callback.stop()
+    def init_spin_callback(self):
+        if self._spin_callback is not None:
+            return
+        self._spin_callback = pn.state.add_periodic_callback(
+            self.spin_tick,
+            period=100,
+            start=False,
+        )
+        # This is the Panel-documented pattern: the widget directly controls
+        # the callback's running parameter in both directions.
+        self._spin_link = self.spin.link(
+            self._spin_callback,
+            bidirectional=True,
+            value="running",
+        )
 
     def spin_tick(self):
         if self._view3d_dict is None:
@@ -231,12 +239,19 @@ class CleanBrowser:
             + 2.0 * np.pi * period_s / max(1.0, float(self.spin_seconds.value))
         ) % (2.0 * np.pi)
         camera = camera_for_angle(self._spin_angle)
-        layout = self._view3d_dict.setdefault("layout", {})
-        scene = layout.setdefault("scene", {})
+
+        # Make NEW dict objects for the changed layout path. Panel can efficiently
+        # patch Plotly dictionaries, but an in-place mutation of the same nested
+        # dict can be invisible to Param/change detection.
+        layout = dict(self._view3d_dict.get("layout", {}))
+        scene = dict(layout.get("scene", {}))
         scene["camera"] = camera
-        # Panel's Plotly pane can patch layout dictionaries efficiently when the
-        # dictionary object is reassigned. This avoids resending hit arrays.
-        self.view3d.object = self._view3d_dict
+        layout["scene"] = scene
+
+        updated = dict(self._view3d_dict)
+        updated["layout"] = layout
+        self._view3d_dict = updated
+        self.view3d.object = updated
 
     def export_current(self, *_):
         if self.reader is None or self.current_plotted is None or self.current_metadata is None:
