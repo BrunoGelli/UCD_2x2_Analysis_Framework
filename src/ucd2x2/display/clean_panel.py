@@ -99,6 +99,7 @@ class CleanBrowser:
         self.spin_seconds = pn.widgets.FloatSlider(
             name="Spin seconds / rotation", value=16.0, start=4.0, end=40.0, step=1.0
         )
+        self.spin_status = pn.pane.Markdown("Spin engine: waiting for session")
         self.rank_metric = pn.widgets.Select(name="Candidate sort", options={"Total cleaned Q":"total_Q", "Q in nominal detector volume":"Q_in_nominal_volume"})
         self.shown_rows = []
         self.pick = pn.widgets.Select(name="Top 100 candidates", options={})
@@ -123,7 +124,7 @@ class CleanBrowser:
             pn.Card(self.event, self.jump, pn.Row(self.prev,self.next), title="Navigation"),
             pn.Card(self.clean, self.local, self.mean, self.fraction, self.disabled, title="Cleaning"),
             pn.Card(self.rank_metric, self.pick, self.copen, pn.Row(self.cprev,self.cnext), self.rank_status, title="Candidates"),
-            pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin,self.spin_seconds,title="Display"),
+            pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin,self.spin_seconds,self.spin_status,title="Display"),
             pn.Card(self.export_dir, self.export_button, self.export_status, title="Export"),
             width=400, scroll=True, height=1000)
         self.layout = pn.Row(sidebar, pn.Tabs(("3D",self.view3d),("2D",self.view2d),("Distributions",self.analysis), sizing_mode="stretch_width"),
@@ -228,6 +229,13 @@ class CleanBrowser:
             self._spin_callback,
             bidirectional=True,
             value="running",
+        )
+        self._spin_callback.param.watch(self.spin_running_changed, "running")
+        self.spin_status.object = "Spin engine: ready"
+
+    def spin_running_changed(self, event):
+        self.spin_status.object = (
+            "Spin engine: **running**" if event.new else "Spin engine: stopped"
         )
 
     def spin_tick(self):
