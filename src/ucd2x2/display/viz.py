@@ -73,9 +73,22 @@ def apply_detector_frame(fig3d, fig2d=None, padding_cm=2.0):
     return bounds
 
 
+def camera_for_angle(angle, radius=1.75, height=0.85):
+    """Return a Plotly 3D camera on a horizontal orbit around the detector."""
+    return dict(
+        eye=dict(
+            x=float(radius * np.cos(angle)),
+            y=float(radius * np.sin(angle)),
+            z=float(height),
+        ),
+        center=dict(x=0.0, y=0.0, z=0.0),
+        up=dict(x=0.0, y=0.0, z=1.0),
+    )
+
+
 def add_camera_spin(fig, seconds_per_rotation=16.0, n_frames=120,
                     radius=1.75, height=0.85):
-    """Add browser-side Play/Pause camera rotation controls to a 3D figure."""
+    """Add Play/Pause camera frames for standalone Plotly/HTML output."""
     n_frames = max(12, int(n_frames))
     seconds_per_rotation = max(1.0, float(seconds_per_rotation))
     duration_ms = max(20, int(1000.0 * seconds_per_rotation / n_frames))
@@ -83,15 +96,7 @@ def add_camera_spin(fig, seconds_per_rotation=16.0, n_frames=120,
     frames = []
     for i in range(n_frames):
         angle = 2.0 * np.pi * i / n_frames
-        camera = dict(
-            eye=dict(
-                x=float(radius * np.cos(angle)),
-                y=float(radius * np.sin(angle)),
-                z=float(height),
-            ),
-            center=dict(x=0.0, y=0.0, z=0.0),
-            up=dict(x=0.0, y=0.0, z=1.0),
-        )
+        camera = camera_for_angle(angle, radius=radius, height=height)
         frames.append(
             go.Frame(
                 name=f"camera-spin-{i:03d}",
