@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+import os
+from pathlib import Path
 
 import numpy as np
 import panel as pn
@@ -14,8 +16,14 @@ import panel as pn
 from ucd2x2.cli import add_cleaning_arguments, policy_from_args
 from ucd2x2.core.hot_pixels import EventHitReader, HotPixelMask, EventCleaner, CleaningPolicy
 from ucd2x2.core.event_scan import event_summary, load_candidates
-from ucd2x2.core.geometry import module_boxes_cm
-from ucd2x2.display.viz import make_plotly_3d, make_plotly_2d_projections, make_plotly_analysis
+from ucd2x2.display.export_html import export_event_html
+from ucd2x2.display.viz import (
+    add_camera_spin,
+    apply_detector_frame,
+    make_plotly_3d,
+    make_plotly_2d_projections,
+    make_plotly_analysis,
+)
 
 pn.extension("plotly")
 
@@ -30,6 +38,13 @@ def _args():
     parser.add_argument("--event", type=int, default=0)
     add_cleaning_arguments(parser)
     return parser.parse_known_args()[0]
+
+
+def _default_export_dir():
+    pscratch = os.environ.get("PSCRATCH")
+    if pscratch:
+        return str(Path(pscratch) / "ucd2x2-event-exports")
+    return str(Path.cwd() / "outputs" / "event_exports")
 
 
 def _charge_range(figure, hits):
@@ -50,6 +65,8 @@ class CleanBrowser:
         self.reader, self.mask, self.rows = None, None, []
         self.saved_policy = None
         self._loading = False
+        self.current_figures = None
+        self.current_metadata = None
         self.file = pn.widgets.TextInput(name="Completed FLOW file", value=args.h5)
         self.mask_file = pn.widgets.TextInput(name="Trusted mask PKL (optional)", value=args.hot_mask or "")
         self.csv_file = pn.widgets.TextInput(name="Candidate CSV (optional)", value=args.candidates or "")
@@ -68,7 +85,10 @@ class CleanBrowser:
         self.point_size = pn.widgets.IntSlider(name="Point size", start=1, end=10, value=2)
         self.max_hits = pn.widgets.IntInput(name="Max plotted hits (sampling only)", value=max(1,args.max_hits), start=1)
         self.boxes = pn.widgets.Checkbox(name="Detector geometry", value=True)
-        self.frame = pn.widgets.Checkbox(name="Frame nominal detector (view only)", value=True)
+        self.frame = pn.widgets.Checkbox(name="Lock axes to detector volume (view only)", value=True)
+        self.spin_seconds = pn.widgets.FloatSlider(
+            name="Spin seconds / rotation", value=16.0, start=4.0, end=40.0, step=1.0
+        )
         self.rank_metric = pn.widgets.Select(name="Candidate sort", options={"Total cleaned Q":"total_Q", "Q in nominal detector volume":"Q_in_nominal_volume"})
         self.shown_rows = []
         self.pick = pn.widgets.Select(name="Top 100 candidates", options={})
@@ -77,6 +97,13 @@ class CleanBrowser:
         self.cnext = pn.widgets.Button(name="Next candidate")
         self.status = pn.pane.Markdown("", sizing_mode="stretch_width")
         self.rank_status = pn.pane.Markdown("")
+        self.export_dir = pn.widgets.TextInput(
+            name="HTML export directory", value=_default_export_dir()
+        )
+        self.export_button = pn.widgets.Button(
+            name="Export current event HTML", button_type="success"
+        )
+        self.export_status = pn.pane.Markdown("")
         self.view3d = pn.pane.Plotly(height=760, sizing_mode="stretch_width")
         self.view2d = pn.pane.Plotly(height=780, sizing_mode="stretch_width")
         self.analysis = pn.pane.Plotly(height=500, sizing_mode="stretch_width")
@@ -86,7 +113,8 @@ class CleanBrowser:
             pn.Card(self.event, self.jump, pn.Row(self.prev,self.next), title="Navigation"),
             pn.Card(self.clean, self.local, self.mean, self.fraction, self.disabled, title="Cleaning"),
             pn.Card(self.rank_metric, self.pick, self.copen, pn.Row(self.cprev,self.cnext), self.rank_status, title="Candidates"),
-            pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,title="Display"),
+            pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin_seconds,title="Display"),
+            pn.Card(self.export_dir, self.export_button, self.export_status, title="Export"),
             width=400, scroll=True, height=1000)
         self.layout = pn.Row(sidebar, pn.Tabs(("3D",self.view3d),("2D",self.view2d),("Distributions",self.analysis), sizing_mode="stretch_width"),
                              sizing_mode="stretch_width")
@@ -97,10 +125,11 @@ class CleanBrowser:
         self.copen.on_click(lambda _: self.goto(self.pick.value) if self.pick.value is not None else None)
         self.cprev.on_click(lambda _: self.step_candidate(-1))
         self.cnext.on_click(lambda _: self.step_candidate(1))
+        self.export_button.on_click(self.export_current)
         self.jump.param.watch(lambda e: self.goto(e.new), "value")
         self.pick.param.watch(lambda e: self.goto(e.new) if e.new is not None else None, "value")
         for widget in (self.event,self.clean,self.local,self.mean,self.fraction,self.disabled,
-                       self.color,self.point_size,self.max_hits,self.boxes,self.frame):
+                       self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin_seconds):
             widget.param.watch(self.refresh,"value")
         pn.state.on_session_destroyed(lambda context: self.close())
         self.load()
@@ -169,6 +198,32 @@ class CleanBrowser:
         self.pick.value = values[(position+step) % len(values)]
         self.goto(self.pick.value)
 
+    def export_current(self, *_):
+        if self.reader is None or self.current_figures is None or self.current_metadata is None:
+            self.export_status.object = "**Nothing to export yet.** Load an event first."
+            return
+        try:
+            index = int(self.event.value)
+            event_id = self.reader.event_id(index)
+            source_name = Path(self.reader.source["path"]).name
+            view = "cleaned" if self.clean.value else "raw"
+            output_dir = Path(self.export_dir.value).expanduser()
+            output = output_dir / (
+                f"{source_name}.event-{index:06d}.id-{event_id}.{view}.html"
+            )
+            fig3d, fig2d, analysis = self.current_figures
+            saved = export_event_html(
+                output,
+                title=f"2×2 event {index} (ID {event_id})",
+                metadata=self.current_metadata,
+                fig3d=fig3d,
+                fig2d=fig2d,
+                analysis=analysis,
+            )
+            self.export_status.object = f"Saved standalone interactive HTML: {saved}"
+        except Exception as exc:
+            self.export_status.object = f"**Export failed:** {exc}"
+
     def refresh(self, *_):
         if self._loading or self.reader is None:
             return
@@ -200,15 +255,30 @@ class CleanBrowser:
             fig2d = make_plotly_2d_projections(plotted,**kw)
             if self.color.value == "Q":
                 _charge_range(fig3d,hits); _charge_range(fig2d,hits)
-            # Give the colorbar/legend space and preserve the camera on option changes.
-            fig3d.update_layout(height=760,margin=dict(l=0,r=100,t=45,b=0),uirevision=str(index))
+            # Stable detector framing prevents a few extreme reconstructed coordinates
+            # from blowing up either the 3D view or the 2D projections. This is a
+            # display-only clip: event contents and scores remain untouched.
+            fig3d.update_layout(height=760,margin=dict(l=0,r=100,t=75,b=0),uirevision=str(index))
             if self.frame.value:
-                boxes = list(module_boxes_cm().values())
-                bounds = {axis:[min(getattr(b,axis+"min") for b in boxes)-1,
-                               max(getattr(b,axis+"max") for b in boxes)+1] for axis in ("x","y","z")}
-                fig3d.update_layout(scene=dict(xaxis_range=bounds["z"],yaxis_range=bounds["x"],zaxis_range=bounds["y"]))
+                apply_detector_frame(fig3d, fig2d, padding_cm=2.0)
+            add_camera_spin(
+                fig3d,
+                seconds_per_rotation=float(self.spin_seconds.value),
+            )
+            fig_analysis = make_plotly_analysis(hits)
             self.view3d.object, self.view2d.object = fig3d,fig2d
-            self.analysis.object = make_plotly_analysis(hits)
+            self.analysis.object = fig_analysis
+            self.current_figures = (fig3d, fig2d, fig_analysis)
+            self.current_metadata = {
+                "source": self.reader.source["path"],
+                "event_index": index,
+                "event_id": self.reader.event_id(index),
+                "hit_type": self.reader.hit_type,
+                "view": "cleaned" if self.clean.value else "raw",
+                "cleaning_policy": asdict(policy),
+                "cleaning_report": dict(report),
+                "event_summary": dict(summary),
+            }
             self.status.object = (
                 f"**Loaded file:** `{self.reader.source['path']}`  \n"
                 f"**Event index:** {index} | **ID:** {self.reader.event_id(index)}  \n"
@@ -220,6 +290,8 @@ class CleanBrowser:
                 f"**Nominal volume:** {summary['n_in_nominal_volume']:,}/{len(hits):,} hits; Q={summary['Q_in_nominal_volume']:.6g}  \n"
                 f"**Pixels:** {summary['n_unique_pixels']:,} | **Plotted:** {len(plotted):,}/{len(hits):,}  \n"
                 "Nominal volume is a stored-coordinate diagnostic (±1 cm), not a timing correction or physics cut. "
+                "Locked detector axes clip visual outliers only; those hits remain in summaries and charge totals. "
+                "Use ▶ Spin / ⏸ Pause above the 3D plot for browser-side rotation. "
                 "Q color range uses positive charges; Q≤0 stays visible at the low end. "
                 "Distributions use every hit in the selected view, not the plotting subsample.")
         except Exception as exc:
