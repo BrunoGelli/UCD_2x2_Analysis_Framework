@@ -30,6 +30,117 @@ def color_array(hits, mode: str, muon_track=None, r_core=5.0, r_near=25.0):
     raise ValueError("mode must be one of: Q, t_drift, ts_pps, muon_region")
 
 
+
+def detector_view_bounds(padding_cm=2.0):
+    """Return stable detector-coordinate bounds for display framing only."""
+    boxes = list(module_boxes_cm().values())
+    pad = float(padding_cm)
+    return {
+        axis: [
+            min(getattr(box, axis + "min") for box in boxes) - pad,
+            max(getattr(box, axis + "max") for box in boxes) + pad,
+        ]
+        for axis in ("x", "y", "z")
+    }
+
+
+def apply_detector_frame(fig3d, fig2d=None, padding_cm=2.0):
+    """Lock plots to the nominal 2x2 detector envelope.
+
+    Plotly 3D uses (z, x, y) as its displayed axes in this framework. Hits
+    outside these ranges are still present in the event and diagnostics; they
+    simply no longer force the visual scale to expand by metres.
+    """
+    bounds = detector_view_bounds(padding_cm)
+    fig3d.update_layout(
+        scene=dict(
+            xaxis=dict(range=bounds["z"], autorange=False),
+            yaxis=dict(range=bounds["x"], autorange=False),
+            zaxis=dict(range=bounds["y"], autorange=False),
+            aspectmode="cube",
+        )
+    )
+    if fig2d is not None:
+        # XY
+        fig2d.update_xaxes(range=bounds["x"], autorange=False, row=1, col=1)
+        fig2d.update_yaxes(range=bounds["y"], autorange=False, row=1, col=1)
+        # XZ
+        fig2d.update_xaxes(range=bounds["x"], autorange=False, row=1, col=2)
+        fig2d.update_yaxes(range=bounds["z"], autorange=False, row=1, col=2)
+        # YZ
+        fig2d.update_xaxes(range=bounds["y"], autorange=False, row=2, col=1)
+        fig2d.update_yaxes(range=bounds["z"], autorange=False, row=2, col=1)
+    return bounds
+
+
+def add_camera_spin(fig, seconds_per_rotation=16.0, n_frames=120,
+                    radius=1.75, height=0.85):
+    """Add browser-side Play/Pause camera rotation controls to a 3D figure."""
+    n_frames = max(12, int(n_frames))
+    seconds_per_rotation = max(1.0, float(seconds_per_rotation))
+    duration_ms = max(20, int(1000.0 * seconds_per_rotation / n_frames))
+
+    frames = []
+    for i in range(n_frames):
+        angle = 2.0 * np.pi * i / n_frames
+        camera = dict(
+            eye=dict(
+                x=float(radius * np.cos(angle)),
+                y=float(radius * np.sin(angle)),
+                z=float(height),
+            ),
+            center=dict(x=0.0, y=0.0, z=0.0),
+            up=dict(x=0.0, y=0.0, z=1.0),
+        )
+        frames.append(
+            go.Frame(
+                name=f"camera-spin-{i:03d}",
+                layout=go.Layout(scene_camera=camera),
+            )
+        )
+    fig.frames = frames
+
+    menus = list(fig.layout.updatemenus) if fig.layout.updatemenus else []
+    menus.append(dict(
+        type="buttons",
+        direction="left",
+        x=0.0,
+        y=1.08,
+        xanchor="left",
+        yanchor="top",
+        showactive=False,
+        name="camera-spin-controls",
+        buttons=[
+            dict(
+                label="▶ Spin",
+                method="animate",
+                args=[
+                    None,
+                    dict(
+                        frame=dict(duration=duration_ms, redraw=False),
+                        transition=dict(duration=duration_ms, easing="linear"),
+                        fromcurrent=True,
+                        mode="immediate",
+                    ),
+                ],
+            ),
+            dict(
+                label="⏸ Pause",
+                method="animate",
+                args=[
+                    [None],
+                    dict(
+                        frame=dict(duration=0, redraw=False),
+                        transition=dict(duration=0),
+                        mode="immediate",
+                    ),
+                ],
+            ),
+        ],
+    ))
+    fig.update_layout(updatemenus=menus)
+    return fig
+
 def _sample_hits(hits, max_hits: int):
     if max_hits < 1:
         raise ValueError("max_hits must be positive")
