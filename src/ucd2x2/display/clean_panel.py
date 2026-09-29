@@ -57,6 +57,7 @@ def _charge_range(figure, hits):
         lo, hi = lo - 0.5, hi + 0.5
     for trace in figure.data:
         if trace.type in ("scatter3d", "scattergl") and trace.marker.color is not None:
+            trace.marker.cauto = False
             trace.marker.cmin, trace.marker.cmax = lo, hi
 
 
