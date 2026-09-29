@@ -17,6 +17,7 @@ from ucd2x2.cli import add_cleaning_arguments, policy_from_args
 from ucd2x2.core.hot_pixels import EventHitReader, HotPixelMask, EventCleaner, CleaningPolicy
 from ucd2x2.core.event_scan import event_summary, load_candidates
 from ucd2x2.display.export_html import export_event_html
+from ucd2x2.display.showcase_html import export_showcase_html
 from ucd2x2.display.viz import (
     add_camera_spin,
     apply_detector_frame,
@@ -115,6 +116,27 @@ class CleanBrowser:
             name="Export current event HTML", button_type="success"
         )
         self.export_status = pn.pane.Markdown("")
+        self.showcase_events = pn.widgets.TextAreaInput(
+            name="Showcase event indices",
+            placeholder="e.g. 15488, 17267, 27203",
+            height=72,
+        )
+        self.showcase_add = pn.widgets.Button(name="Add current event", button_type="primary")
+        self.showcase_remove = pn.widgets.Button(name="Remove current")
+        self.showcase_clear = pn.widgets.Button(name="Clear")
+        self.showcase_title = pn.widgets.TextInput(
+            name="Showcase title", value="2×2 ND-LAr — Selected Events"
+        )
+        self.showcase_subtitle = pn.widgets.TextInput(
+            name="Subtitle", value="Selected cleaned charge-readout events"
+        )
+        self.showcase_filename = pn.widgets.TextInput(
+            name="Showcase filename", value="2x2_selected_events.html"
+        )
+        self.showcase_export = pn.widgets.Button(
+            name="Export showcase HTML", button_type="success"
+        )
+        self.showcase_status = pn.pane.Markdown("")
         self.view3d = pn.pane.Plotly(height=760, sizing_mode="stretch_width")
         self.view2d = pn.pane.Plotly(height=780, sizing_mode="stretch_width")
         self.analysis = pn.pane.Plotly(height=500, sizing_mode="stretch_width")
@@ -125,7 +147,17 @@ class CleanBrowser:
             pn.Card(self.clean, self.local, self.mean, self.fraction, self.disabled, title="Cleaning"),
             pn.Card(self.rank_metric, self.pick, self.copen, pn.Row(self.cprev,self.cnext), self.rank_status, title="Candidates"),
             pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin,self.spin_seconds,self.spin_status,title="Display"),
-            pn.Card(self.export_dir, self.export_button, self.export_status, title="Export"),
+            pn.Card(self.export_dir, self.export_button, self.export_status, title="Export current event"),
+            pn.Card(
+                self.showcase_events,
+                pn.Row(self.showcase_add, self.showcase_remove, self.showcase_clear),
+                self.showcase_title,
+                self.showcase_subtitle,
+                self.showcase_filename,
+                self.showcase_export,
+                self.showcase_status,
+                title="Showcase",
+            ),
             width=400, scroll=True, height=1000)
         self.layout = pn.Row(sidebar, pn.Tabs(("3D",self.view3d),("2D",self.view2d),("Distributions",self.analysis), sizing_mode="stretch_width"),
                              sizing_mode="stretch_width")
@@ -137,6 +169,10 @@ class CleanBrowser:
         self.cprev.on_click(lambda _: self.step_candidate(-1))
         self.cnext.on_click(lambda _: self.step_candidate(1))
         self.export_button.on_click(self.export_current)
+        self.showcase_add.on_click(self.add_current_to_showcase)
+        self.showcase_remove.on_click(self.remove_current_from_showcase)
+        self.showcase_clear.on_click(self.clear_showcase)
+        self.showcase_export.on_click(self.export_showcase)
         self.jump.param.watch(lambda e: self.goto(e.new), "value")
         self.pick.param.watch(lambda e: self.goto(e.new) if e.new is not None else None, "value")
         for widget in (self.event,self.clean,self.local,self.mean,self.fraction,self.disabled,
@@ -220,7 +256,7 @@ class CleanBrowser:
             return
         self._spin_callback = pn.state.add_periodic_callback(
             self.spin_tick,
-            period=100,
+            period=50,
             start=False,
         )
         # This is the Panel-documented pattern: the widget directly controls
@@ -241,7 +277,7 @@ class CleanBrowser:
     def spin_tick(self):
         if self._view3d_dict is None:
             return
-        period_s = 0.1
+        period_s = 0.05
         self._spin_angle = (
             self._spin_angle
             + 2.0 * np.pi * period_s / max(1.0, float(self.spin_seconds.value))
@@ -260,6 +296,136 @@ class CleanBrowser:
         updated["layout"] = layout
         self._view3d_dict = updated
         self.view3d.object = updated
+
+    def _showcase_indices(self):
+        if self.reader is None:
+            return []
+        text = self.showcase_events.value.replace(",", " ")
+        values = []
+        seen = set()
+        for token in text.split():
+            try:
+                value = int(token)
+            except ValueError as exc:
+                raise ValueError(f"Invalid showcase event index: {token!r}") from exc
+            if not 0 <= value < len(self.reader):
+                raise ValueError(
+                    f"Showcase event {value} outside valid range 0..{len(self.reader)-1}"
+                )
+            if value not in seen:
+                seen.add(value)
+                values.append(value)
+        return values
+
+    def _set_showcase_indices(self, values):
+        self.showcase_events.value = ", ".join(str(int(v)) for v in values)
+        self.showcase_status.object = (
+            f"Selected **{len(values)}** event(s): "
+            + (", ".join(str(v) for v in values) if values else "none")
+        )
+
+    def add_current_to_showcase(self, *_):
+        try:
+            values = self._showcase_indices()
+            current = int(self.event.value)
+            if current not in values:
+                values.append(current)
+            self._set_showcase_indices(values)
+        except Exception as exc:
+            self.showcase_status.object = f"**Selection failed:** {exc}"
+
+    def remove_current_from_showcase(self, *_):
+        try:
+            current = int(self.event.value)
+            values = [v for v in self._showcase_indices() if v != current]
+            self._set_showcase_indices(values)
+        except Exception as exc:
+            self.showcase_status.object = f"**Selection failed:** {exc}"
+
+    def clear_showcase(self, *_):
+        self._set_showcase_indices([])
+
+    def _build_export_figures(self, index, cleaner):
+        raw = self.reader.get(index)
+        keep, report = cleaner.apply(raw)
+        hits = raw[keep] if self.clean.value else raw
+        summary = event_summary(hits)
+        cap = int(self.max_hits.value)
+        plotted = hits
+        if len(hits) > cap:
+            selected = np.sort(
+                np.random.default_rng(index).choice(len(hits), cap, replace=False)
+            )
+            plotted = hits[selected]
+        kw = dict(
+            color_mode=self.color.value,
+            max_hits=max(1, len(plotted)),
+            point_size=self.point_size.value,
+        )
+        fig3d = make_plotly_3d(plotted, show_boxes=self.boxes.value, **kw)
+        fig2d = make_plotly_2d_projections(plotted, **kw)
+        if self.color.value == "Q":
+            _charge_range(fig3d, plotted)
+            _charge_range(fig2d, plotted)
+        fig3d.update_layout(
+            height=700,
+            margin=dict(l=0, r=100, t=35, b=0),
+            title=None,
+        )
+        fig2d.update_layout(title=None)
+        if self.frame.value:
+            apply_detector_frame(fig3d, fig2d, padding_cm=2.0)
+        metadata = {
+            "source_file": Path(self.reader.source["path"]).name,
+            "event_index": index,
+            "event_id": self.reader.event_id(index),
+            "hit_type": self.reader.hit_type,
+            "view": "cleaned" if self.clean.value else "raw",
+            "color": self.color.value,
+            "cleaning_policy": asdict(cleaner.policy),
+            "cleaning_report": dict(report),
+            "event_summary": dict(summary),
+        }
+        return fig3d, fig2d, hits, metadata
+
+    def export_showcase(self, *_):
+        if self.reader is None:
+            self.showcase_status.object = "**No FLOW file loaded.**"
+            return
+        try:
+            indices = self._showcase_indices()
+            if not indices:
+                raise ValueError("Add at least one event to the showcase")
+
+            policy = self.policy()
+            cleaner = EventCleaner(self.mask, policy)
+            events = []
+            for index in indices:
+                fig3d, fig2d, _, metadata = self._build_export_figures(index, cleaner)
+                events.append({
+                    "event_index": index,
+                    "event_id": self.reader.event_id(index),
+                    "fig3d": fig3d,
+                    "fig2d": fig2d,
+                    "metadata": metadata,
+                })
+
+            filename = self.showcase_filename.value.strip() or "2x2_selected_events.html"
+            if not filename.lower().endswith(".html"):
+                filename += ".html"
+            output = Path(self.export_dir.value).expanduser() / filename
+            saved = export_showcase_html(
+                output,
+                title=self.showcase_title.value.strip() or "2×2 ND-LAr — Selected Events",
+                subtitle=self.showcase_subtitle.value.strip(),
+                events=events,
+                seconds_per_rotation=float(self.spin_seconds.value),
+            )
+            self.showcase_status.object = (
+                f"Saved **{len(events)}-event showcase**: `{saved}`"
+            )
+        except Exception as exc:
+            self.showcase_status.object = f"**Showcase export failed:** {exc}"
 
     def export_current(self, *_):
         if self.reader is None or self.current_plotted is None or self.current_metadata is None:
