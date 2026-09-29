@@ -185,12 +185,16 @@ class CleanBrowser:
         self.load()
         self.goto(args.event)
 
+    def close_reader(self):
+        if self.reader is not None:
+            self.reader.close()
+            self.reader = None
+
     def close(self):
         if self._spin_callback is not None:
             self._spin_callback.stop()
             self._spin_callback = None
-        if self.reader is not None:
-            self.reader.close(); self.reader = None
+        self.close_reader()
 
     def policy(self):
         return CleaningPolicy(event_max_hits=self.local.value,
@@ -209,7 +213,7 @@ class CleanBrowser:
             cleaner = EventCleaner(mask, policy)
             rows = load_candidates(self.csv_file.value, reader, cleaner, mask) if self.csv_file.value.strip() else []
             self._loading = True
-            self.close()
+            self.close_reader()
             self.reader, self.mask, self.rows = reader, mask, rows
             self.saved_policy = asdict(policy)
             self.local.value = policy.event_max_hits
