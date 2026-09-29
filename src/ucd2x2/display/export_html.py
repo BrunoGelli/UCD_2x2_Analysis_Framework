@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 
+import numpy as np
 import plotly.io as pio
 
 
@@ -31,6 +32,34 @@ def _atomic_write_text(path: Path, text: str) -> None:
             os.unlink(tmp_name)
 
 
+def _freeze_marker_colors(fig):
+    """Materialize numeric marker colors for robust standalone HTML export.
+
+    Panel may transport NumPy arrays through its binary protocol, while a
+    standalone Plotly page is more robust when marker colors are plain JSON
+    lists with explicit cauto/cmin/cmax settings.
+    """
+    for trace in fig.data:
+        marker = getattr(trace, "marker", None)
+        if marker is None:
+            continue
+        color = getattr(marker, "color", None)
+        if color is None or isinstance(color, str):
+            continue
+        try:
+            values = np.asarray(color)
+        except Exception:
+            continue
+        if values.ndim != 1 or values.size == 0:
+            continue
+        if not np.issubdtype(values.dtype, np.number):
+            continue
+        marker.color = values.astype(float).tolist()
+        if marker.cmin is not None and marker.cmax is not None:
+            marker.cauto = False
+    return fig
+
+
 def export_event_html(output_path, *, title, metadata, fig3d, fig2d, analysis):
     """Write one self-contained interactive event page.
 
@@ -39,6 +68,8 @@ def export_event_html(output_path, *, title, metadata, fig3d, fig2d, analysis):
     are preserved.
     """
     output = Path(output_path).expanduser().resolve()
+    _freeze_marker_colors(fig3d)
+    _freeze_marker_colors(fig2d)
     config = {
         "responsive": True,
         "displaylogo": False,
