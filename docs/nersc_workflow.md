@@ -172,15 +172,18 @@ Do not substitute a random SSH login-node process for the Jupyter-terminal proce
 - A detector-frame toggle that locks both the 3D scene and all three spatial 2D
   projections to the nominal detector envelope. Extreme reconstructed coordinates
   remain in statistics/scores but cannot stretch the displayed axes by metres.
-- Browser-side **▶ Spin / ⏸ Pause** controls above the 3D figure. The speed slider
-  sets seconds per 360-degree rotation. The animation changes only the camera;
-  event data are not resent or duplicated in every animation frame.
+- A **Spin camera** toggle plus a speed slider in the Panel sidebar. The live
+  Panel app uses a per-session periodic callback and patches only the Plotly
+  camera layout; it does not rely on Plotly animation frames inside Panel.
 - Plotly's normal modebar camera button can save a PNG at any paused orientation.
   For a short movie, run the 360-degree spin and screen-record the browser; no
   server-side video encoder is required.
-- An **Export current event HTML** card writes a standalone interactive page with
-  the 3D view (including spin controls), 2D projections, distributions and event
-  metadata. It defaults to `$PSCRATCH/ucd2x2-event-exports` when `$PSCRATCH`
+- An **Export current event HTML** card rebuilds the current figures from the
+  selected event and writes a standalone interactive page with 3D/2D views,
+  distributions and metadata. Standalone HTML uses native Plotly Spin/Pause
+  animation controls. Numeric marker colors are materialized with explicit
+  charge-scale bounds so the exported Viridis scale matches the displayed Q
+  values. It defaults to `$PSCRATCH/ucd2x2-event-exports` when `$PSCRATCH`
   exists, otherwise `outputs/event_exports`.
 
 The exported HTML embeds Plotly and the plotted event data, so treat it as a data
