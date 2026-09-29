@@ -20,6 +20,7 @@ from ucd2x2.display.export_html import export_event_html
 from ucd2x2.display.viz import (
     add_camera_spin,
     apply_detector_frame,
+    camera_for_angle,
     make_plotly_3d,
     make_plotly_2d_projections,
     make_plotly_analysis,
@@ -65,8 +66,12 @@ class CleanBrowser:
         self.reader, self.mask, self.rows = None, None, []
         self.saved_policy = None
         self._loading = False
-        self.current_figures = None
         self.current_metadata = None
+        self.current_hits = None
+        self.current_plotted = None
+        self._view3d_dict = None
+        self._spin_angle = 0.0
+        self._spin_callback = None
         self.file = pn.widgets.TextInput(name="Completed FLOW file", value=args.h5)
         self.mask_file = pn.widgets.TextInput(name="Trusted mask PKL (optional)", value=args.hot_mask or "")
         self.csv_file = pn.widgets.TextInput(name="Candidate CSV (optional)", value=args.candidates or "")
@@ -86,6 +91,9 @@ class CleanBrowser:
         self.max_hits = pn.widgets.IntInput(name="Max plotted hits (sampling only)", value=max(1,args.max_hits), start=1)
         self.boxes = pn.widgets.Checkbox(name="Detector geometry", value=True)
         self.frame = pn.widgets.Checkbox(name="Lock axes to detector volume (view only)", value=True)
+        self.spin = pn.widgets.Toggle(
+            name="Spin camera", value=False, button_type="primary"
+        )
         self.spin_seconds = pn.widgets.FloatSlider(
             name="Spin seconds / rotation", value=16.0, start=4.0, end=40.0, step=1.0
         )
@@ -113,7 +121,7 @@ class CleanBrowser:
             pn.Card(self.event, self.jump, pn.Row(self.prev,self.next), title="Navigation"),
             pn.Card(self.clean, self.local, self.mean, self.fraction, self.disabled, title="Cleaning"),
             pn.Card(self.rank_metric, self.pick, self.copen, pn.Row(self.cprev,self.cnext), self.rank_status, title="Candidates"),
-            pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin_seconds,title="Display"),
+            pn.Card(self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin,self.spin_seconds,title="Display"),
             pn.Card(self.export_dir, self.export_button, self.export_status, title="Export"),
             width=400, scroll=True, height=1000)
         self.layout = pn.Row(sidebar, pn.Tabs(("3D",self.view3d),("2D",self.view2d),("Distributions",self.analysis), sizing_mode="stretch_width"),
@@ -126,16 +134,20 @@ class CleanBrowser:
         self.cprev.on_click(lambda _: self.step_candidate(-1))
         self.cnext.on_click(lambda _: self.step_candidate(1))
         self.export_button.on_click(self.export_current)
+        self.spin.param.watch(self.toggle_spin, "value")
         self.jump.param.watch(lambda e: self.goto(e.new), "value")
         self.pick.param.watch(lambda e: self.goto(e.new) if e.new is not None else None, "value")
         for widget in (self.event,self.clean,self.local,self.mean,self.fraction,self.disabled,
-                       self.color,self.point_size,self.max_hits,self.boxes,self.frame,self.spin_seconds):
+                       self.color,self.point_size,self.max_hits,self.boxes,self.frame):
             widget.param.watch(self.refresh,"value")
         pn.state.on_session_destroyed(lambda context: self.close())
         self.load()
         self.goto(args.event)
 
     def close(self):
+        if self._spin_callback is not None:
+            self._spin_callback.stop()
+            self._spin_callback = None
         if self.reader is not None:
             self.reader.close(); self.reader = None
 
@@ -198,8 +210,35 @@ class CleanBrowser:
         self.pick.value = values[(position+step) % len(values)]
         self.goto(self.pick.value)
 
+    def toggle_spin(self, event):
+        if event.new:
+            if self._spin_callback is None:
+                self._spin_callback = pn.state.add_periodic_callback(
+                    self.spin_tick, period=100, start=True
+                )
+            else:
+                self._spin_callback.start()
+        elif self._spin_callback is not None:
+            self._spin_callback.stop()
+
+    def spin_tick(self):
+        if self._view3d_dict is None:
+            return
+        period_s = 0.1
+        self._spin_angle = (
+            self._spin_angle
+            + 2.0 * np.pi * period_s / max(1.0, float(self.spin_seconds.value))
+        ) % (2.0 * np.pi)
+        camera = camera_for_angle(self._spin_angle)
+        layout = self._view3d_dict.setdefault("layout", {})
+        scene = layout.setdefault("scene", {})
+        scene["camera"] = camera
+        # Panel's Plotly pane can patch layout dictionaries efficiently when the
+        # dictionary object is reassigned. This avoids resending hit arrays.
+        self.view3d.object = self._view3d_dict
+
     def export_current(self, *_):
-        if self.reader is None or self.current_figures is None or self.current_metadata is None:
+        if self.reader is None or self.current_plotted is None or self.current_metadata is None:
             self.export_status.object = "**Nothing to export yet.** Load an event first."
             return
         try:
@@ -211,7 +250,26 @@ class CleanBrowser:
             output = output_dir / (
                 f"{source_name}.event-{index:06d}.id-{event_id}.{view}.html"
             )
-            fig3d, fig2d, analysis = self.current_figures
+            plotted = self.current_plotted
+            hits = self.current_hits
+            kw = dict(
+                color_mode=self.color.value,
+                max_hits=max(1, len(plotted)),
+                point_size=self.point_size.value,
+            )
+            fig3d = make_plotly_3d(plotted, show_boxes=self.boxes.value, **kw)
+            fig2d = make_plotly_2d_projections(plotted, **kw)
+            if self.color.value == "Q":
+                _charge_range(fig3d, plotted)
+                _charge_range(fig2d, plotted)
+            fig3d.update_layout(height=760, margin=dict(l=0,r=100,t=75,b=0))
+            if self.frame.value:
+                apply_detector_frame(fig3d, fig2d, padding_cm=2.0)
+            add_camera_spin(
+                fig3d,
+                seconds_per_rotation=float(self.spin_seconds.value),
+            )
+            analysis = make_plotly_analysis(hits)
             saved = export_event_html(
                 output,
                 title=f"2×2 event {index} (ID {event_id})",
@@ -254,21 +312,22 @@ class CleanBrowser:
             fig3d = make_plotly_3d(plotted,show_boxes=self.boxes.value,**kw)
             fig2d = make_plotly_2d_projections(plotted,**kw)
             if self.color.value == "Q":
-                _charge_range(fig3d,hits); _charge_range(fig2d,hits)
+                _charge_range(fig3d,plotted); _charge_range(fig2d,plotted)
             # Stable detector framing prevents a few extreme reconstructed coordinates
             # from blowing up either the 3D view or the 2D projections. This is a
             # display-only clip: event contents and scores remain untouched.
             fig3d.update_layout(height=760,margin=dict(l=0,r=100,t=75,b=0),uirevision=str(index))
             if self.frame.value:
                 apply_detector_frame(fig3d, fig2d, padding_cm=2.0)
-            add_camera_spin(
-                fig3d,
-                seconds_per_rotation=float(self.spin_seconds.value),
-            )
+            if self.spin.value:
+                fig3d.update_layout(scene_camera=camera_for_angle(self._spin_angle))
             fig_analysis = make_plotly_analysis(hits)
-            self.view3d.object, self.view2d.object = fig3d,fig2d
+            self._view3d_dict = fig3d.to_dict()
+            self.view3d.object = self._view3d_dict
+            self.view2d.object = fig2d
             self.analysis.object = fig_analysis
-            self.current_figures = (fig3d, fig2d, fig_analysis)
+            self.current_hits = hits
+            self.current_plotted = plotted
             self.current_metadata = {
                 "source": self.reader.source["path"],
                 "event_index": index,
@@ -291,7 +350,7 @@ class CleanBrowser:
                 f"**Pixels:** {summary['n_unique_pixels']:,} | **Plotted:** {len(plotted):,}/{len(hits):,}  \n"
                 "Nominal volume is a stored-coordinate diagnostic (±1 cm), not a timing correction or physics cut. "
                 "Locked detector axes clip visual outliers only; those hits remain in summaries and charge totals. "
-                "Use ▶ Spin / ⏸ Pause above the 3D plot for browser-side rotation. "
+                "Use the Spin camera toggle for server-driven rotation; pause it to inspect or screenshot. "
                 "Q color range uses positive charges; Q≤0 stays visible at the low end. "
                 "Distributions use every hit in the selected view, not the plotting subsample.")
         except Exception as exc:
