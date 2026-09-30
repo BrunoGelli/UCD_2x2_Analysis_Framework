@@ -132,6 +132,69 @@ def _cmd_scan(args):
     return 0
 
 
+def _video_progress(kind, event_index, done, total):
+    if kind == "event_start":
+        print(f"Rendering event {event_index}: {total:,} frames", flush=True)
+    else:
+        print(f"  event {event_index}: {done:,}/{total:,} frames", flush=True)
+
+
+def _cmd_video(args):
+    from ucd2x2.core.hot_pixels import HotPixelMask
+    from ucd2x2.display.video_export import export_showcase_video, parse_event_indices
+
+    mask = HotPixelMask.load(args.hot_mask)
+    events = parse_event_indices(args.events)
+    policy = policy_from_args(args, mask)
+
+    if args.preflight_only:
+        from ucd2x2.display.video_export import (
+            check_plotly_image_export,
+            choose_video_encoder,
+            ffmpeg_encoders,
+        )
+        check_plotly_image_export()
+        executable, encoders = ffmpeg_encoders(args.ffmpeg)
+        chosen = choose_video_encoder(args.output, encoders, args.encoder)
+        print(f"Plotly/Kaleido image export: OK")
+        print(f"ffmpeg: {executable}")
+        print(f"encoder: {chosen}")
+        return 0
+
+    video, sidecar = export_showcase_video(
+        args.input_h5,
+        args.output,
+        event_indices=events,
+        mask=mask,
+        policy=policy,
+        hit_type=args.hit_type,
+        fps=args.fps,
+        seconds_per_event=args.seconds_per_event,
+        hold_seconds=args.hold_seconds,
+        start_angle_deg=args.start_angle_deg,
+        rotation_degrees=args.rotation_degrees,
+        width=args.width,
+        height=args.height,
+        scale=args.scale,
+        point_size=args.point_size,
+        max_hits=args.max_hits,
+        color_mode=args.color,
+        lock_detector_frame=not args.no_lock_detector_frame,
+        camera_radius=args.camera_radius,
+        camera_height=args.camera_height,
+        render_batch=args.render_batch,
+        work_dir=args.work_dir,
+        keep_frames=args.keep_frames,
+        ffmpeg=args.ffmpeg,
+        encoder=args.encoder,
+        overwrite=args.overwrite,
+        progress=_video_progress,
+    )
+    print(f"Video: {video}")
+    print(f"Metadata: {sidecar}")
+    return 0
+
+
 def _cmd_stage2_run(args):
     from ucd2x2.stage2.run_stage2 import run_stage2_file
     summary = run_stage2_file(args.input, args.config, output_summary_path=args.output,
@@ -159,6 +222,44 @@ def _build_parser():
     display.add_argument("--dry-run", action="store_true")
     add_cleaning_arguments(display)
     display.set_defaults(func=_cmd_event_display)
+    video = sub.add_parser(
+        "export-showcase-video",
+        help="Render selected cleaned events to a high-resolution MP4/WebM",
+    )
+    video.add_argument("input_h5")
+    video.add_argument("--hot-mask", required=True)
+    video.add_argument(
+        "--events",
+        nargs="+",
+        required=True,
+        help="Event indices; spaces and/or comma-separated values are accepted",
+    )
+    video.add_argument("-o", "--output", required=True)
+    video.add_argument("--hit-type", choices=("prompt", "final"), default="prompt")
+    video.add_argument("--fps", type=int, default=30)
+    video.add_argument("--seconds-per-event", type=float, default=4.0)
+    video.add_argument("--hold-seconds", type=float, default=0.35)
+    video.add_argument("--start-angle-deg", type=float, default=-35.0)
+    video.add_argument("--rotation-degrees", type=float, default=180.0)
+    video.add_argument("--width", type=int, default=1920)
+    video.add_argument("--height", type=int, default=1080)
+    video.add_argument("--scale", type=float, default=1.0)
+    video.add_argument("--point-size", type=int, default=3)
+    video.add_argument("--max-hits", type=int, default=20_000)
+    video.add_argument("--color", choices=("Q", "t_drift", "ts_pps"), default="Q")
+    video.add_argument("--camera-radius", type=float, default=1.75)
+    video.add_argument("--camera-height", type=float, default=0.85)
+    video.add_argument("--render-batch", type=int, default=12)
+    video.add_argument("--work-dir")
+    video.add_argument("--keep-frames", action="store_true")
+    video.add_argument("--ffmpeg", default="ffmpeg")
+    video.add_argument("--encoder", default="auto")
+    video.add_argument("--no-lock-detector-frame", action="store_true")
+    video.add_argument("--overwrite", action="store_true")
+    video.add_argument("--preflight-only", action="store_true")
+    add_cleaning_arguments(video)
+    video.set_defaults(func=_cmd_video)
+
     for name, function in (("build-hot-mask", _cmd_build), ("scan-events", _cmd_scan)):
         p = sub.add_parser(name)
         p.add_argument("input_h5")
@@ -184,7 +285,7 @@ def main(argv: Sequence[str] | None = None):
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (ValueError, OSError, KeyError) as exc:
+    except (ValueError, OSError, KeyError, RuntimeError) as exc:
         parser.error(str(exc))
     except KeyboardInterrupt:
         return 130
