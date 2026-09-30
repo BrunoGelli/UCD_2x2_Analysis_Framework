@@ -153,9 +153,9 @@ def _cmd_video(args):
             choose_video_encoder,
             ffmpeg_encoders,
         )
-        check_plotly_image_export()
         executable, encoders = ffmpeg_encoders(args.ffmpeg)
         chosen = choose_video_encoder(args.output, encoders, args.encoder)
+        check_plotly_image_export()
         print(f"Plotly/Kaleido image export: OK")
         print(f"ffmpeg: {executable}")
         print(f"encoder: {chosen}")
