@@ -377,10 +377,11 @@ def export_showcase_video(
     if max_hits < 1 or render_batch < 1:
         raise ValueError("max-hits and render-batch must be positive")
 
-    # Preflight before reading/rendering multi-GB data.
-    check_plotly_image_export()
+    # Preflight before reading/rendering multi-GB data. Check the final video
+    # encoder first because the NERSC system ffmpeg may lack H.264 support.
     executable, encoders = ffmpeg_encoders(ffmpeg)
     chosen = choose_video_encoder(output, encoders, encoder)
+    check_plotly_image_export()
 
     temp = None
     if work_dir is not None:
