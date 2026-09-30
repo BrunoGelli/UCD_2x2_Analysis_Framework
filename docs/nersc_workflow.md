@@ -302,7 +302,75 @@ that. Long windows can collect more residual noise and therefore larger ΣQ.
 Inspect both time spans and geometry before calling a high-Q entry a real cosmic.
 Do not use a few selected events as a production file-wide occupancy calibration.
 
-## 7. Performance and validation
+## 7. Render selected events to MP4
+
+The interactive browser is useful for finding events, but screen recording is not
+the preferred way to make a shareable movie. The video exporter uses the exact same
+FLOW reader, hot-pixel mask and cleaning policy, renders high-resolution Plotly
+frames with Kaleido, then assembles them with ffmpeg.
+
+Install the optional Python renderer once:
+
+```bash
+python -m pip install -e '.[video]'
+```
+
+Kaleido v1 requires Chrome/Chromium. Check the full toolchain before rendering:
+
+```bash
+ucd2x2 export-showcase-video "$FILE" \
+    --hot-mask "$MASK" \
+    --events 15488 17267 27203 \
+    -o "$PSCRATCH/2x2_selected_events.mp4" \
+    --preflight-only
+```
+
+If Kaleido cannot find a browser, run `plotly_get_chrome` once or set
+`BROWSER_PATH` to a compatible Chrome/Chromium installation.
+
+The NERSC system ffmpeg may have no H.264 encoder. If preflight reports that
+`libx264` / `libopenh264` are missing, install a conda-forge ffmpeg into the
+active environment:
+
+```bash
+conda install -c conda-forge ffmpeg
+which ffmpeg
+ffmpeg -hide_banner -encoders | grep -E 'libx264|libopenh264'
+```
+
+Then render the selected events:
+
+```bash
+ucd2x2 export-showcase-video "$FILE" \
+    --hot-mask "$MASK" \
+    --events 15488 17267 27203 \
+    -o "$PSCRATCH/2x2_selected_events.mp4" \
+    --fps 30 \
+    --seconds-per-event 4 \
+    --rotation-degrees 180 \
+    --width 1920 --height 1080 \
+    --overwrite
+```
+
+Defaults are deliberately presentation-friendly but restrained: 30 fps, a
+4-second half-rotation per event, 0.35-second holds at each end, a fixed detector
+frame, Viridis `log10(Q)` colors, 1920×1080 output, and H.264/yuv420p for MP4.
+The camera starts at -35 degrees and rotates 180 degrees. Change
+`--rotation-degrees 360` for a full turn.
+
+Frames are rendered in small batches so Kaleido can reuse its browser without
+holding hundreds of large Plotly figures in memory. Temporary PNGs are written
+under `$PSCRATCH` when available and removed after a successful/failed run.
+Use `--keep-frames` or `--work-dir DIR` while debugging.
+
+The exporter also writes `<video>.json` with event IDs, cleaning diagnostics,
+render settings and the ffmpeg command. It refuses a mask/source mismatch and
+checks that the source FLOW file did not change during rendering.
+
+For a quick test with the older NERSC system ffmpeg, a `.webm` output can use
+`libvpx-vp9` if available. For Slack, H.264 MP4 is the preferred output.
+
+## 8. Performance and validation
 
 The implementation uses bounded hit/reference read-ahead, vectorized per-event
 pixel counting, batched NumPy reductions, and independent processes across files.
