@@ -4,6 +4,8 @@ The **UCD 2x2 Analysis Framework** is an incremental analysis and visualization 
 
 Today, the repository provides:
 - an interactive Panel event display,
+- a read-only hardware hot-pixel mask and candidate-browser workflow,
+- multi-file mask construction on compute nodes,
 - a configurable Stage 2 pipeline editor,
 - YAML-backed Stage 2 pipeline definitions,
 - a minimal Stage 2 batch runner,
@@ -11,10 +13,32 @@ Today, the repository provides:
 
 The codebase is intentionally evolving in small, testable steps while preserving existing behavior.
 
+## NERSC cleaning workflow
+
+See **[the step-by-step NERSC tutorial](docs/nersc_workflow.md)** for compute-node
+batch submission, mask reuse, candidate navigation and the authenticated Panel URL.
+No source-file copies or edits are required.
+
+```bash
+# First two commands: on allocated compute nodes.
+ucd2x2 build-hot-mask RUN.FLOW.hdf5 -o RUN.hot_pixels.pkl
+ucd2x2 scan-events RUN.FLOW.hdf5 --hot-mask RUN.hot_pixels.pkl -o RUN.candidates.csv
+
+# NERSC Jupyter terminal: prints the URL to open in a separate browser tab.
+ucd2x2 event-display RUN.FLOW.hdf5 --hot-mask RUN.hot_pixels.pkl \
+    --candidates RUN.candidates.csv --jupyter --port 5006 --no-show
+```
+
+For many files use `scripts/build_masks.py` and `slurm/build_masks.slurm`, as
+documented in the tutorial. Only load trusted PKLs. Source and cleaning-policy
+mismatches are rejected; high cleaned charge is a candidate score, not a cosmic
+classification. The tile-5/IOG-6 highlight has been removed.
+
 ## Current implemented scope
 
 Implemented now:
 - **Event display** (`src/ucd2x2/display/app_panel.py`) for opening HDF5 data, navigating events, plotting hits, and viewing analysis overlays.
+- **Cleaned browser** (`src/ucd2x2/display/clean_panel.py`) for shared hardware cleaning, raw comparison, provenance-checked rankings and geometry/time diagnostics.
 - **Stage 2 pipeline abstractions** (`CutStep`, `StepResult`, `Stage2Pipeline`, `CutRegistry`, `ParamSpec`).
 - **Pipeline UI wiring** for editing ordered steps and parameters from the display.
 - **YAML config loading/saving** for pipeline definitions.
@@ -45,7 +69,7 @@ pytest -q
 
 ## Event display
 
-Launch with sample data:
+Launch the original full Stage-2/truth-overlay display with sample data:
 
 ```bash
 ucd2x2 event-display tests/sample_data.hdf5
@@ -57,7 +81,7 @@ Equivalent direct Panel command:
 panel serve src/ucd2x2/display/app_panel.py --show --args --h5 tests/sample_data.hdf5
 ```
 
-More usage details: `docs/event_display.md`.
+More usage details: `docs/event_display.md` and `docs/nersc_workflow.md`.
 
 ## Stage 2 batch
 
@@ -85,11 +109,11 @@ Reference: `docs/yaml_configs.md`.
 ## Repository layout
 
 - `src/ucd2x2/` – package source.
-- `src/ucd2x2/core/` – shared IO, geometry, clustering, and selection helpers.
-- `src/ucd2x2/display/` – Panel event display and visualization code.
+- `src/ucd2x2/core/` – shared IO, geometry, clustering, selection and hot-pixel helpers.
+- `src/ucd2x2/display/` – Panel event displays and visualization code.
 - `src/ucd2x2/stage2/` – Stage 2 pipeline, config loading, widgets/UI helpers, and batch runner.
-- `src/ucd2x2/stage2/cuts/` – currently implemented Stage 2 steps.
 - `configs/stage2/` – YAML pipeline examples.
+- `scripts/` and `slurm/` – multi-file processing and NERSC compute-node launcher.
 - `tests/` – regression and smoke tests (includes `tests/sample_data.hdf5` fixture).
 - `docs/` – architecture and usage documentation.
 
@@ -99,6 +123,7 @@ Reference: `docs/yaml_configs.md`.
 - Only two Stage 2 steps are currently implemented.
 - Stage 3/Stage 4 architecture is planned but not implemented in this repository yet.
 - Configuration schema is intentionally minimal and may evolve with backward-compatible migration steps.
+- Hardware-mask cleaning/candidate browsing is a dedicated real-data frontend; the legacy Stage-2/truth editor and batch runner retain their existing semantics.
 
 ## Roadmap (high level)
 
@@ -109,8 +134,8 @@ Reference: `docs/yaml_configs.md`.
 
 ## Additional docs
 
+- `docs/nersc_workflow.md`
 - `docs/architecture.md`
-- `docs/event_display.md`
 - `docs/stage2_pipeline.md`
 - `docs/yaml_configs.md`
 - `docs/writing_cuts.md`

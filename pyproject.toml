@@ -37,3 +37,6 @@ Home = "https://example.invalid"
 dev = [
   "pytest",
 ]
+video = [
+  "kaleido>=1.0",
+]
