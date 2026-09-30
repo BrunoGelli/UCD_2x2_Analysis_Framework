@@ -8,7 +8,7 @@ from ucd2x2.cli import build_event_display_command,_build_parser,policy_from_arg
 
 def test_cli_help_runs_successfully():
     proc=subprocess.run([sys.executable,'-m','ucd2x2.cli','--help'],capture_output=True,text=True,check=True)
-    for command in ('event-display','stage2-run','build-hot-mask','scan-events'):
+    for command in ('event-display','stage2-run','build-hot-mask','scan-events','export-showcase-video'):
         assert command in proc.stdout
 
 
@@ -53,3 +53,20 @@ def test_explicit_cut_disable():
                                     '--event-max-hits-per-pixel','0','--max-event-fraction','0.1'])
     policy=policy_from_args(args)
     assert policy.global_mean_max is None and policy.event_max_hits==0 and policy.max_event_fraction==.1
+
+
+
+def test_video_cli_accepts_panel_style_event_indices():
+    args = _build_parser().parse_args([
+        'export-showcase-video',
+        'a.h5',
+        '--hot-mask', 'a.pkl',
+        '--events', '7,11', '23',
+        '-o', 'out.mp4',
+        '--fps', '24',
+        '--seconds-per-event', '3.5',
+    ])
+    assert args.events == ['7,11', '23']
+    assert args.fps == 24
+    assert args.seconds_per_event == 3.5
+    assert args.output == 'out.mp4'
