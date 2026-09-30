@@ -368,6 +368,11 @@ def export_showcase_video(
     progress=None,
 ):
     events = parse_event_indices(event_indices)
+    output_path = Path(output).expanduser().resolve()
+    if output_path.exists() and not overwrite:
+        raise ValueError(
+            f"Output already exists: {output_path}. Use --overwrite to replace it"
+        )
     if fps < 1 or fps > 120:
         raise ValueError("fps must be in 1..120")
     if seconds_per_event <= 0 or hold_seconds < 0:
